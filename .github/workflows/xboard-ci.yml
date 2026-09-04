@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - xboard-dev
+      - 'wip/**'
   pull_request:
 permissions:
   contents: read
@@ -114,3 +115,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Test shared-443 edge against HAProxy and Caddy
+        run: RW_EDGE_INTEGRATION=1 npx tsx --test src/modules/edge/edge.linux.test.ts

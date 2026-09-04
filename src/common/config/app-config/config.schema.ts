@@ -36,6 +36,13 @@ export const configSchema = z
             .startsWith('/')
             .default('/var/lib/remnanode/mieru-metrics-baselines.json'),
         MITA_UDS_PATH: z.string().startsWith('/').default('/var/run/mita/mita.sock'),
+        EDGE_ENABLED: booleanString(),
+        EDGE_CONFIG_DIR: z.string().startsWith('/').default('/var/lib/remnanode/edge'),
+        EDGE_HAPROXY_MASTER_SOCKET: z
+            .string()
+            .startsWith('/')
+            .default('/var/run/xboard-edge/haproxy-master.sock'),
+        EDGE_CADDY_ADMIN_URL: z.literal('http://127.0.0.1:2019').default('http://127.0.0.1:2019'),
         NFTABLES_LOGGING: booleanString('true'),
         NFTABLES_ACCEPT_REPLY_TRAFFIC: booleanString('false'),
         SNI_VERIFICATION: booleanString('false'),

@@ -4,12 +4,13 @@ on:
   push:
     branches:
       - xboard-dev
+      - 'wip/**'
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  group: xboard-node-image
+  group: xboard-node-image-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -18,7 +19,7 @@ env:
 jobs:
   validate:
     name: Validate node before publishing
-    if: github.repository == 'FengYuchen1314/node' && github.ref == 'refs/heads/xboard-dev'
+    if: github.repository == 'FengYuchen1314/node'
     permissions:
       contents: read
     runs-on: ubuntu-24.04
@@ -97,9 +98,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Test shared-443 edge against HAProxy and Caddy
+        run: RW_EDGE_INTEGRATION=1 npx tsx --test src/modules/edge/edge.linux.test.ts
+
   build:
     name: Build and publish test image
-    if: github.repository == 'FengYuchen1314/node' && github.ref == 'refs/heads/xboard-dev'
+    if: github.repository == 'FengYuchen1314/node'
     needs: validate
     permissions:
       contents: read
@@ -120,6 +124,7 @@ jobs:
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
 
       - name: Log in to GHCR
+        if: github.ref == 'refs/heads/xboard-dev'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679fd # v4
         with:
           registry: ghcr.io
@@ -132,7 +137,7 @@ jobs:
           context: .
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ github.ref == 'refs/heads/xboard-dev' }}
           tags: |
             ${{ env.IMAGE_NAME }}:xboard-dev
             ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}

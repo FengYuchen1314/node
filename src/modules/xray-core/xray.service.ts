@@ -335,6 +335,7 @@ export class XrayService implements OnApplicationBootstrap {
             this.logger.log('s6: Xray process stopped.');
         } catch (error) {
             this.logger.log(`s6: Failed to stop Xray process. Error: ${error}`);
+            throw error;
         }
     }
 
