@@ -100,8 +100,10 @@ func startIsolatedServer(t *testing.T, username, password string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err = client.SetConfig(ctx, &pb.ServerConfig{
-		PortBindings:     []*pb.PortBinding{{Port: proto.Int32(int32(port)), Protocol: pb.TransportProtocol_TCP.Enum()}},
-		Users:            []*pb.User{{Name: proto.String(username), Password: proto.String(password)}},
+		PortBindings: []*pb.PortBinding{{Port: proto.Int32(int32(port)), Protocol: pb.TransportProtocol_TCP.Enum()}},
+		// The test destination is a loopback echo server. This exception belongs only
+		// to the fixture, not to the production user/configuration schema.
+		Users:            []*pb.User{{Name: proto.String(username), Password: proto.String(password), AllowLoopbackIP: proto.Bool(true)}},
 		AdvancedSettings: &pb.ServerAdvancedSettings{UserHintIsMandatory: proto.Bool(true)},
 	})
 	if err != nil {
