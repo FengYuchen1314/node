@@ -90,7 +90,6 @@ jobs:
       - name: Test
         run: |
           npm test
-          npx tsx --test src/modules/anytls/anytls.controller.test.ts
           node --test scripts/probe-camouflage-domains.test.mjs
 
       - name: Test Mita control helper

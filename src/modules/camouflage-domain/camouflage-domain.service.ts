@@ -58,10 +58,12 @@ export class CamouflageDomainService {
                 controller.signal,
             );
             const asn13335Matched = this.matchesCloudflareAsn(dns.addresses);
+            const { cfRayPresent, ...http } = observation.http;
             const cloudflareSignals = detectCloudflareSignals({
                 addresses: dns.addresses,
                 cnameChain: dns.cnameChain,
                 serverHeader: observation.http.serverHeader,
+                cfRayPresent,
                 asn13335Matched,
             });
             const cloudflareDetected = cloudflareSignals.length > 0;
@@ -96,7 +98,7 @@ export class CamouflageDomainService {
                     signals: cloudflareSignals,
                 },
                 tls: observation.tls,
-                http: observation.http,
+                http,
                 mainlandProbes: [],
             };
             return CamouflageDomainAgentValidationReportSchema.parse(report);

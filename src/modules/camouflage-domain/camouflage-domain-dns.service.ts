@@ -22,12 +22,23 @@ export class CamouflageDomainDnsService {
         domain: string,
         signal: AbortSignal,
     ): Promise<CamouflageDomainDnsObservation> {
-        const resolver = new Resolver();
-        const [ipv4, ipv6, cnameChain] = await Promise.all([
-            resolveAddressFamily(() => resolver.resolve4(domain), signal),
-            resolveAddressFamily(() => resolver.resolve6(domain), signal),
-            resolveCnameChain(resolver, domain, signal),
-        ]);
+        if (signal.aborted) throw timeoutError();
+        const resolver = new Resolver({ timeout: 2_000, tries: 2 });
+        const cancel = () => resolver.cancel();
+        signal.addEventListener('abort', cancel, { once: true });
+        let ipv4: string[];
+        let ipv6: string[];
+        let cnameChain: string[];
+        try {
+            [ipv4, ipv6, cnameChain] = await Promise.all([
+                resolveAddressFamily(() => resolver.resolve4(domain), signal),
+                resolveAddressFamily(() => resolver.resolve6(domain), signal),
+                resolveCnameChain(resolver, domain, signal),
+            ]);
+        } finally {
+            signal.removeEventListener('abort', cancel);
+            resolver.cancel();
+        }
         const addresses = [...new Set([...ipv4, ...ipv6].map(canonicalizeIp))].sort(
             compareIpAddresses,
         );
@@ -53,7 +64,7 @@ export class CamouflageDomainDnsService {
     }
 }
 
-async function resolveAddressFamily(
+export async function resolveAddressFamily(
     query: () => Promise<string[]>,
     signal: AbortSignal,
 ): Promise<string[]> {
@@ -62,7 +73,11 @@ async function resolveAddressFamily(
     } catch (error: unknown) {
         if (isNoDnsData(error)) return [];
         if (error instanceof CamouflageDomainError) throw error;
-        return [];
+        throw new CamouflageDomainError(
+            'DNS_RESOLUTION_FAILED',
+            'An address-family DNS query failed; Cloudflare exclusion could not be verified.',
+            HttpStatus.BAD_GATEWAY,
+        );
     }
 }
 

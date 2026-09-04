@@ -93,3 +93,49 @@ test('Cloudflare ASN excludes an address even when it is outside the pinned CDN 
     assert.equal(result.attempts[0].error, 'CLOUDFLARE_EXCLUDED');
     assert.equal(result.automaticallyEligible, false);
 });
+
+test('an incomplete AAAA or CNAME query cannot be treated as a clean non-Cloudflare result', async () => {
+    for (const method of ['resolve6', 'resolveCname']) {
+        const resolver = {
+            resolve4: async () => ['8.8.8.8'],
+            resolve6: async () => [],
+            resolveCname: async () => [],
+            [method]: async () => {
+                throw Object.assign(new Error('DNS fixture'), { code: 'ETIMEOUT' });
+            },
+        };
+        const result = await probeDomain(resolver, 'example.com');
+        assert.equal(result.outcome, 'DNS_INCOMPLETE');
+        assert.deepEqual(result.attempts, []);
+        assert.equal(result.automaticallyEligible, false);
+    }
+});
+
+test('a later CNAME hop to Cloudflare is excluded without any connection', async () => {
+    const result = await probeDomain(
+        {
+            resolve4: async () => ['8.8.8.8'],
+            resolve6: async () => [],
+            resolveCname: async (domain) =>
+                domain === 'example.com' ? ['alias.example.net'] : ['edge.cloudflare.net'],
+        },
+        'example.com',
+    );
+    assert.equal(result.outcome, 'CLOUDFLARE_EXCLUDED');
+    assert.deepEqual(result.cloudflareSignals, ['CNAME']);
+    assert.deepEqual(result.dns.cnames, ['alias.example.net', 'edge.cloudflare.net']);
+    assert.deepEqual(result.attempts, []);
+});
+
+test('CNAME cycles fail closed with a bounded discovery result', async () => {
+    const result = await probeDomain(
+        {
+            resolve4: async () => ['8.8.8.8'],
+            resolve6: async () => [],
+            resolveCname: async () => ['example.com'],
+        },
+        'example.com',
+    );
+    assert.equal(result.outcome, 'DNS_INCOMPLETE');
+    assert.deepEqual(result.attempts, []);
+});

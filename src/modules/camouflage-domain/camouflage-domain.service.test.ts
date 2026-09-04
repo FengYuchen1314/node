@@ -180,6 +180,19 @@ test('same-domain validation is locked while the first request is in flight', as
     await first;
 });
 
+test('CF-Ray evidence reaches the strict Panel report without changing its wire schema', async () => {
+    const service = createService({
+        dns: publicDns(),
+        network: async () => ({
+            ...NETWORK_OBSERVATION,
+            http: { ...NETWORK_OBSERVATION.http, cfRayPresent: true },
+        }),
+    });
+    const report = await service.validate(REQUEST);
+    assert.deepEqual(report.cloudflare, { detected: true, signals: ['HTTP_HEADER'] });
+    assert.equal(Object.hasOwn(report.http, 'cfRayPresent'), false);
+});
+
 test('request contract is strict and normalizes IDNA before any network use', () => {
     assert.equal(
         CamouflageDomainAgentValidationRequestSchema.parse({

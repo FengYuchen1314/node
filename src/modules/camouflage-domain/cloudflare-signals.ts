@@ -50,6 +50,7 @@ export interface CloudflareSignalInput {
     asn13335Matched: boolean;
     cnameChain: readonly string[];
     serverHeader: string | null;
+    cfRayPresent?: boolean;
 }
 
 export function detectCloudflareSignals(input: CloudflareSignalInput): CloudflareSignal[] {
@@ -61,7 +62,7 @@ export function detectCloudflareSignals(input: CloudflareSignalInput): Cloudflar
     if (input.cnameChain.some(isCloudflareHostname)) {
         signals.push(CAMOUFLAGE_DOMAIN_CLOUDFLARE_SIGNALS.CNAME);
     }
-    if (/\bcloudflare\b/i.test(input.serverHeader ?? '')) {
+    if (input.cfRayPresent || /\bcloudflare\b/i.test(input.serverHeader ?? '')) {
         signals.push(CAMOUFLAGE_DOMAIN_CLOUDFLARE_SIGNALS.HTTP_HEADER);
     }
     return signals;

@@ -34,3 +34,16 @@ test('Cloudflare name and header heuristics avoid substring-only false positives
         [],
     );
 });
+
+test('CF-Ray alone excludes an otherwise unrecognized Cloudflare endpoint', () => {
+    assert.deepEqual(
+        detectCloudflareSignals({
+            addresses: ['8.8.8.8'],
+            asn13335Matched: false,
+            cnameChain: [],
+            serverHeader: 'nginx',
+            cfRayPresent: true,
+        }),
+        [CAMOUFLAGE_DOMAIN_CLOUDFLARE_SIGNALS.HTTP_HEADER],
+    );
+});

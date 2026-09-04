@@ -43,6 +43,23 @@ That negative control is not a camouflage-pool entry.
 
 ## Boundaries and remaining work
 
+### Strict DNS and CF-Ray recheck
+
+The Agent now treats `cf-ray` as an HTTP Cloudflare signal even when the `Server` header is
+absent or masked. The report reuses the existing `HTTP_HEADER` signal, without changing the
+Panel wire schema. Address-family timeouts, SERVFAIL and refused queries are errors, not empty
+answers. DNS cancellation closes pending resolver work. The standalone mainland probe also
+walks bounded CNAME chains and returns `DNS_INCOMPLETE` if any family or CNAME query fails other
+than authoritative absence. It never upgrades that outcome to non-Cloudflare eligibility.
+
+At 2026-09-04 23:17 UTC, the revised script completed a second full observation of the same
+21 seeds. All 21 completed the pinned IPv4 handshake without observed Cloudflare signals. The
+separate `www.cloudflare.com` control was excluded before TLS again. Missing AAAA records were
+explicit ENODATA, not timeout errors. See `evidence/mainland-camouflage-20260905-recheck.json`.
+Script SHA-256: `5b906df66902e7c100aacaca48cf17cb3187d880beae88226b9587c5e75f789a`.
+
+### Still not an automatic allow-list
+
 Every report still sets `automaticallyEligible: false`. These are discovery observations, not
 an authenticated panel probe API, a current deployment allow-list, nationwide reachability or
 a guarantee of no GFW interference. IPv6 TLS connectivity and IPv6 origin-ASN lookup were not

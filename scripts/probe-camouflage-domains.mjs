@@ -42,7 +42,10 @@ export function cloudflareDnsSignals(addresses, cnames) {
     const signals = [];
     if (addresses.some((ip) => isIP(ip) && cloudflare.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6')))
         signals.push('IP_RANGE');
-    if (cnames.some((name) => /(^|\.)cloudflare\.(com|net)\.?$/i.test(name))) signals.push('CNAME');
+    if (
+        cnames.some((name) => /(^|\.)(?:cloudflare\.(com|net)|cloudflare-dns\.com)\.?$/i.test(name))
+    )
+        signals.push('CNAME');
     return signals;
 }
 for (const cidr of [
@@ -224,13 +227,37 @@ export function probeAddress(domain, address) {
     });
 }
 
+async function resolveCnameChain(resolver, domain) {
+    const chain = [];
+    const seen = new Set([domain]);
+    let current = domain;
+    for (let depth = 0; depth <= 16; depth++) {
+        let records;
+        try {
+            records = await resolver.resolveCname(current);
+        } catch (error) {
+            if (['ENODATA', 'ENOTFOUND'].includes(error?.code)) return chain;
+            throw error;
+        }
+        if (!records.length) return chain;
+        if (records.length !== 1 || depth === 16) throw new Error('DNS_CNAME_LIMIT');
+        current = normalizeDomain(records[0]);
+        if (seen.has(current)) throw new Error('DNS_CNAME_CYCLE');
+        chain.push(current);
+        // An exclusion is already conclusive; there is no need to contact more DNS names.
+        if (cloudflareDnsSignals([], chain).length) return chain;
+        seen.add(current);
+    }
+    return chain;
+}
+
 export async function probeDomain(resolver, input) {
     const domain = normalizeDomain(input);
     const checkedAt = new Date().toISOString();
     const [a, aaaa, cnames] = await Promise.allSettled([
         resolver.resolve4(domain),
         resolver.resolve6(domain),
-        resolver.resolveCname(domain),
+        resolveCnameChain(resolver, domain),
     ]);
     const addresses = a.status === 'fulfilled' ? [...new Set(a.value)].sort() : [];
     const dns = {
@@ -238,11 +265,34 @@ export async function probeDomain(resolver, input) {
         ipv6: aaaa.status === 'fulfilled' ? aaaa.value : [],
         cnames: cnames.status === 'fulfilled' ? cnames.value : [],
         error: a.status === 'rejected' ? String(a.reason?.code ?? 'DNS_FAILED') : null,
+        errors: Object.fromEntries(
+            [
+                ['A', a],
+                ['AAAA', aaaa],
+                ['CNAME', cnames],
+            ]
+                .filter(([, result]) => result.status === 'rejected')
+                .map(([family, result]) => [
+                    family,
+                    String(result.reason?.code ?? result.reason?.message ?? 'DNS_FAILED').slice(
+                        0,
+                        100,
+                    ),
+                ]),
+        ),
     };
     const base = { domain, checkedAt, dns, attempts: [], automaticallyEligible: false };
     const dnsSignals = cloudflareDnsSignals([...addresses, ...dns.ipv6], dns.cnames);
     if (dnsSignals.length)
         return { ...base, outcome: 'CLOUDFLARE_EXCLUDED', cloudflareSignals: dnsSignals };
+    if (
+        [a, aaaa, cnames].some(
+            (result) =>
+                result.status === 'rejected' &&
+                !['ENODATA', 'ENOTFOUND'].includes(result.reason?.code),
+        )
+    )
+        return { ...base, outcome: 'DNS_INCOMPLETE' };
     if (!addresses.length) return { ...base, outcome: 'NO_IPV4_ADDRESS' };
     if (addresses.some((ip) => !isPublicV4(ip))) return { ...base, outcome: 'DNS_BOGON' };
     const attempts = [];
@@ -263,8 +313,6 @@ export async function probeDomain(resolver, input) {
         if (origin?.asns.includes('AS13335')) cloudflareSignals.push('ASN');
         if (/\bcloudflare\b/i.test(attempt.http?.server ?? '') || attempt.http?.cfRayPresent)
             cloudflareSignals.push('HTTP_HEADER');
-        if (dns.cnames.some((name) => /(^|\.)cloudflare\.(com|net)\.?$/i.test(name)))
-            cloudflareSignals.push('CNAME');
         attempts.push({ ...attempt, origin, cloudflareSignals });
     }
     return {

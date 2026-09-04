@@ -82,6 +82,7 @@ test('HTTP evidence never follows redirects and treats Location as a redirect si
         }),
         {
             negotiatedProtocol: 'h2',
+            cfRayPresent: false,
             statusCode: 200,
             redirectCount: 1,
             serverHeader: 'nginx',
@@ -94,6 +95,15 @@ test('HTTP evidence never follows redirects and treats Location as a redirect si
         (error: unknown) =>
             error instanceof CamouflageDomainError && error.code === 'HTTP_REQUEST_FAILED',
     );
+});
+
+test('CF-Ray remains a Cloudflare signal even with a masked or absent Server header', () => {
+    for (const value of ['', 'fixture-ray-id']) {
+        assert.equal(
+            buildHttpObservation('h2', { ':status': 200, 'cf-ray': value }).cfRayPresent,
+            true,
+        );
+    }
 });
 
 function assertTlsFailure(socket: object, code: string): void {

@@ -28,6 +28,7 @@ export interface CamouflageDomainTlsObservation {
 }
 
 export interface CamouflageDomainHttpObservation {
+    cfRayPresent?: boolean;
     locationHeader: string | null;
     negotiatedProtocol: string;
     redirectCount: number;
@@ -42,6 +43,7 @@ export interface CamouflageDomainNetworkObservation {
 
 interface ObservedHttp2Headers {
     ':status'?: number;
+    'cf-ray'?: string | string[];
     location?: string | string[];
     server?: string | string[];
 }
@@ -251,6 +253,7 @@ export function buildHttpObservation(
     const locationHeader = normalizeHeader(headers.location, 2_048);
     return {
         negotiatedProtocol,
+        cfRayPresent: Object.hasOwn(headers, 'cf-ray'),
         statusCode: rawStatus,
         redirectCount: (rawStatus >= 300 && rawStatus <= 399) || locationHeader !== null ? 1 : 0,
         serverHeader,
