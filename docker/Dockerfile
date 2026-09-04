@@ -26,11 +26,14 @@ COPY tools/mita-control/go.mod tools/mita-control/go.sum ./
 RUN go mod download && go mod verify
 
 COPY tools/mita-control/*.go ./
+COPY tools/mita-control/daemon ./daemon
 
 ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
-    go build -mod=readonly -trimpath -ldflags='-s -w' -o /out/rw-mita-control .
+    go build -mod=readonly -trimpath -ldflags='-s -w' -o /out/rw-mita-control . \
+    && CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
+    go build -mod=readonly -trimpath -ldflags='-s -w' -o /out/rw-mita-daemon ./daemon
 
 
 FROM alpine:3.21 AS xray
@@ -112,6 +115,7 @@ COPY --from=xray /usr/local/share/xray/geosite.dat /usr/local/share/xray/geosite
 COPY --from=asn /usr/local/share/asn /usr/local/share/asn
 COPY --from=geocheck /usr/local/bin/geocheck /usr/local/bin/geocheck
 COPY --from=mita-control /out/rw-mita-control /usr/local/bin/rw-mita-control
+COPY --from=mita-control /out/rw-mita-daemon /usr/local/bin/rw-mita-daemon
 
 COPY docker/rootfs/ /
 

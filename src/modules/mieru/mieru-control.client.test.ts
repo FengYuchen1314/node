@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import {
     MieruMetricsSchema,
+    MieruIsolatedConfigSchema,
     MieruServerConfigSchema,
     MieruStatusSchema,
 } from '@libs/contracts/models';
@@ -14,6 +15,46 @@ const StatusResultSchema = z.object({
     status: MieruStatusSchema,
     version: z.string(),
     metrics: MieruMetricsSchema,
+});
+
+test('isolated runtime contracts reject duplicate identities and shared listener configurations', () => {
+    const instance = {
+        id: '11111111-1111-4111-8111-111111111111',
+        config: {
+            portBindings: [{ port: 24443, protocol: 'TCP' }],
+            users: [{ name: '1', password: 'secret' }],
+        },
+    };
+    assert.equal(
+        MieruIsolatedConfigSchema.safeParse({ kind: 'ISOLATED_LISTENERS', instances: [instance] })
+            .success,
+        true,
+    );
+    assert.equal(
+        MieruIsolatedConfigSchema.safeParse({
+            kind: 'ISOLATED_LISTENERS',
+            instances: [instance, instance],
+        }).success,
+        false,
+    );
+    assert.equal(
+        MieruIsolatedConfigSchema.safeParse({
+            kind: 'ISOLATED_LISTENERS',
+            instances: [
+                {
+                    ...instance,
+                    config: {
+                        ...instance.config,
+                        portBindings: [
+                            ...instance.config.portBindings,
+                            { port: 25443, protocol: 'TCP' },
+                        ],
+                    },
+                },
+            ],
+        }).success,
+        false,
+    );
 });
 
 test('Mieru metrics remain exact decimal strings beyond Number.MAX_SAFE_INTEGER', () => {

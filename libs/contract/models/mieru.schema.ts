@@ -93,6 +93,47 @@ export const MieruRollbackSchema = z.object({
 });
 
 export type TMieruServerConfig = z.infer<typeof MieruServerConfigSchema>;
+
+export const MieruIsolatedConfigSchema = z
+    .object({
+        kind: z.literal('ISOLATED_LISTENERS'),
+        instances: z
+            .array(
+                z
+                    .object({
+                        id: z.uuid(),
+                        config: MieruServerConfigSchema.refine(
+                            (config) => config.portBindings.length === 1,
+                            {
+                                message:
+                                    'Each isolated Mieru instance must have exactly one listener.',
+                            },
+                        ),
+                    })
+                    .strict(),
+            )
+            .min(1)
+            .max(128),
+    })
+    .strict()
+    .superRefine((runtime, context) => {
+        const ids = new Set<string>();
+        const ports = new Set<string>();
+        for (const [index, instance] of runtime.instances.entries()) {
+            const binding = instance.config.portBindings[0];
+            const port = `${binding.protocol}:${binding.port}`;
+            if (ids.has(instance.id) || ports.has(port)) {
+                context.addIssue({
+                    code: 'custom',
+                    message: 'Mieru instance IDs and listeners must be unique.',
+                    path: ['instances', index],
+                });
+            }
+            ids.add(instance.id);
+            ports.add(port);
+        }
+    });
+export type TMieruIsolatedConfig = z.infer<typeof MieruIsolatedConfigSchema>;
 export type TMieruStatus = z.infer<typeof MieruStatusSchema>;
 export type TMieruOperation = z.infer<typeof MieruOperationSchema>;
 export type TMieruMetrics = z.infer<typeof MieruMetricsSchema>;
