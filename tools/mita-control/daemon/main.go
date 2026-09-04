@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -25,9 +26,16 @@ import (
 func main() {
 	directory := flag.String("state-dir", "", "absolute instance state directory")
 	socket := flag.String("socket", "", "absolute private management socket")
+	watchParent := flag.Bool("watch-parent", false, "stop when the Agent's stdin pipe closes")
 	flag.Parse()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	if *watchParent {
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			cancel()
+		}()
+	}
 	if err := serve(ctx, *directory, *socket); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

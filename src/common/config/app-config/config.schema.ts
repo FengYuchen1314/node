@@ -28,6 +28,9 @@ export const configSchema = z
             .startsWith('/')
             .default('/usr/local/bin/rw-mita-control'),
         MIERU_ENABLED: booleanString(),
+        MIERU_DAEMON_PATH: z.string().startsWith('/').default('/usr/local/bin/rw-mita-daemon'),
+        MIERU_STATE_DIR: z.string().startsWith('/').default('/var/lib/remnanode/mieru'),
+        MIERU_SOCKET_DIR: z.string().startsWith('/').default('/var/run/rw-mita'),
         MIERU_METRICS_BASELINE_PATH: z
             .string()
             .startsWith('/')

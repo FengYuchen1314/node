@@ -4,12 +4,13 @@ import { test } from 'node:test';
 import { TypedConfigService } from '@common/config/app-config';
 import { TMieruMetrics } from '@libs/contracts/models';
 
-import { IMieruStatusResult, MieruControlClient } from './mieru-control.client';
+import { IMieruStatusResult } from './mieru-control.client';
 import {
     MieruMetricsBaselineState,
     MieruMetricsBaselineStore,
 } from './mieru-metrics-baseline.store';
 import { MieruMetricsDeltaService } from './mieru-metrics-delta.service';
+import { MieruRuntimeService } from './mieru-runtime.service';
 
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 
@@ -194,10 +195,51 @@ function createService(
     } as TypedConfigService;
     return new MieruMetricsDeltaService(
         config,
-        control as unknown as MieruControlClient,
+        control as unknown as MieruRuntimeService,
         store as unknown as MieruMetricsBaselineStore,
     );
 }
+
+test('per-instance resets are calculated before aggregating the same logical user', async () => {
+    const snapshots = [
+        { a: metrics({ alice: [100n, 200n] }), b: metrics({ alice: [100n, 200n] }) },
+        { a: metrics({ alice: [5n, 8n] }), b: metrics({ alice: [120n, 230n] }) },
+    ];
+    const control = {
+        async status() {
+            return { metrics: {}, instanceMetrics: snapshots.shift() };
+        },
+    };
+    const service = createService(control as unknown as FakeControl);
+    assert.deepEqual(await service.getUserDeltas('users', true), [
+        { username: 'alice', uplink: 0, downlink: 0 },
+    ]);
+    assert.deepEqual(await service.getUserDeltas('users', true), [
+        { username: 'alice', uplink: 25, downlink: 38 },
+    ]);
+});
+
+test('multiple instances share one safe emission budget per logical user', async () => {
+    let sample = 0;
+    const control = {
+        async status() {
+            const count = sample++ === 0 ? 0n : MAX_SAFE;
+            return {
+                metrics: {},
+                instanceMetrics: {
+                    a: metrics({ alice: [count, count] }),
+                    b: metrics({ alice: [count, count] }),
+                },
+            };
+        },
+    };
+    const service = createService(control as unknown as FakeControl);
+    await service.getUserDeltas('users', true);
+    const emitted = (await service.getUserDeltas('users', true))[0];
+    assert.equal(BigInt(emitted.uplink) + BigInt(emitted.downlink), MAX_SAFE);
+    const next = (await service.getUserDeltas('users', true))[0];
+    assert.equal(BigInt(next.uplink) + BigInt(next.downlink), MAX_SAFE);
+});
 
 function metrics(users: Record<string, [bigint, bigint]>): TMieruMetrics {
     return {

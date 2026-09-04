@@ -12,6 +12,7 @@ import (
 	"time"
 
 	pb "github.com/enfein/mieru/v3/pkg/appctl/appctlpb"
+	"github.com/enfein/mieru/v3/pkg/metrics"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -42,6 +43,7 @@ func run(args []string, output io.Writer) error {
 	flags.SetOutput(io.Discard)
 	socketPath := flags.String("socket", defaultSocketPath, "Mita management Unix socket")
 	configPath := flags.String("config", "", "Mita server configuration JSON")
+	dumpPath := flags.String("dump", "", "instance metrics dump file")
 	if err := flags.Parse(args[1:]); err != nil {
 		return writeFailure(output, newControlError("arguments", err))
 	}
@@ -53,6 +55,31 @@ func run(args []string, output io.Writer) error {
 	}
 	if !filepath.IsAbs(*socketPath) {
 		return writeFailure(output, newControlError("arguments", errors.New("socket path must be absolute")))
+	}
+	if args[0] == "read-dump" {
+		if !filepath.IsAbs(*dumpPath) {
+			return writeFailure(output, newControlError("arguments", errors.New("absolute dump path is required")))
+		}
+		info, err := os.Stat(*dumpPath)
+		if errors.Is(err, os.ErrNotExist) {
+			return writeEnvelope(output, responseEnvelope{OK: true, Result: map[string]any{"metrics": nil}})
+		}
+		if err != nil || !info.Mode().IsRegular() || info.Size() > 64<<20 {
+			return writeFailure(output, newControlError("read-dump", errors.New("invalid metrics dump")))
+		}
+		metrics.SetMetricsDumpFilePath(*dumpPath)
+		if err := metrics.LoadMetricsFromDump(); err != nil {
+			return writeFailure(output, newControlError("read-dump", err))
+		}
+		data, err := metrics.GetMetricsAsJSON()
+		if err != nil {
+			return writeFailure(output, newControlError("read-dump", err))
+		}
+		values, err := stringifyMetricNumbers(string(data))
+		if err != nil {
+			return writeFailure(output, newControlError("read-dump", err))
+		}
+		return writeEnvelope(output, responseEnvelope{OK: true, Result: map[string]any{"metrics": values}})
 	}
 
 	client, connection, err := dialManagementClient(*socketPath)

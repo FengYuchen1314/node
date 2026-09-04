@@ -9,8 +9,9 @@ import {
 } from '@libs/contracts/commands';
 
 import { GetInterfaceStatsQuery } from '../network-stats/queries/get-interface-stats/get-interface-stats.query';
-import { MieruControlClient, MieruControlError } from './mieru-control.client';
+import { MieruControlError } from './mieru-control.client';
 import { MieruMetricsDeltaService } from './mieru-metrics-delta.service';
+import { MieruRuntimeService } from './mieru-runtime.service';
 
 @Injectable()
 export class MieruService {
@@ -18,7 +19,7 @@ export class MieruService {
     private readonly nodeVersion = __RWNODE_VERSION__ ?? '0.0.0';
 
     constructor(
-        private readonly control: MieruControlClient,
+        private readonly control: MieruRuntimeService,
         private readonly queryBus: QueryBus,
         private readonly metricsDelta: MieruMetricsDeltaService,
     ) {}

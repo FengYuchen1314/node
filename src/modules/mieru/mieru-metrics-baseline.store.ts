@@ -36,8 +36,8 @@ const BaselineEntrySchema = z
         username: z
             .string()
             .min(1)
-            .max(64)
-            .refine((value) => Buffer.byteLength(value, 'utf8') <= 64),
+            .max(512)
+            .refine((value) => Buffer.byteLength(value, 'utf8') <= 512),
         uplink: DecimalCounterSchema,
         downlink: DecimalCounterSchema,
     })

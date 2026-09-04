@@ -61,6 +61,7 @@ export interface IMieruStatusResult {
     status: TMieruStatus;
     version: string;
     metrics: TMieruMetrics;
+    instanceMetrics?: Record<string, TMieruMetrics>;
 }
 
 export class MieruControlError extends Error {
@@ -118,7 +119,7 @@ export class MieruControlClient {
         this.socketPath = configService.getOrThrow('MITA_UDS_PATH');
     }
 
-    public apply(config: TMieruServerConfig): Promise<IMieruSyncResult> {
+    public apply(config: TMieruServerConfig, socket = this.socketPath): Promise<IMieruSyncResult> {
         return this.withMutationLock(async () => {
             const directory = await mkdtemp(join(tmpdir(), 'rw-mita-control-'));
             const configPath = join(directory, 'server-config.json');
@@ -131,7 +132,7 @@ export class MieruControlClient {
                     mode: 0o600,
                 });
                 result = await this.execute(
-                    ['apply', '--socket', this.socketPath, '--config', configPath],
+                    ['apply', '--socket', socket, '--config', configPath],
                     SyncResultSchema,
                 );
             } catch (error: unknown) {
@@ -148,16 +149,26 @@ export class MieruControlClient {
         });
     }
 
-    public stop(): Promise<IMieruStopResult> {
+    public stop(socket = this.socketPath): Promise<IMieruStopResult> {
         return this.withMutationLock(() =>
-            this.execute(['stop', '--socket', this.socketPath], StopResultSchema),
+            this.execute(['stop', '--socket', socket], StopResultSchema),
         );
     }
 
-    public status(): Promise<IMieruStatusResult> {
+    public status(socket = this.socketPath): Promise<IMieruStatusResult> {
         return this.withMutationLock(() =>
-            this.execute(['status', '--socket', this.socketPath], StatusResultSchema),
+            this.execute(['status', '--socket', socket], StatusResultSchema),
         );
+    }
+
+    public async readDump(path: string): Promise<TMieruMetrics | null> {
+        const result = await this.execute(
+            ['read-dump', '--dump', path],
+            z.object({
+                metrics: MieruMetricsSchema.nullable(),
+            }),
+        );
+        return result.metrics;
     }
 
     private async execute<T>(arguments_: string[], resultSchema: z.ZodType<T>): Promise<T> {

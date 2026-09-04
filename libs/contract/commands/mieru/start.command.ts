@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { REST_API } from '../../api';
 import {
     MieruOperationSchema,
+    MieruIsolatedConfigSchema,
     MieruRollbackSchema,
     MieruServerConfigSchema,
     MieruStatusSchema,
@@ -12,7 +13,12 @@ import {
 export namespace StartMieruCommand {
     export const url = REST_API.MIERU.START;
     export const RequestSchema = z.object({
-        config: MieruServerConfigSchema,
+        config: z.union([
+            MieruIsolatedConfigSchema,
+            MieruServerConfigSchema.refine((config) => config.portBindings.length === 1, {
+                message: 'Multiple listeners require an ISOLATED_LISTENERS configuration.',
+            }),
+        ]),
     });
 
     export type Request = z.infer<typeof RequestSchema>;

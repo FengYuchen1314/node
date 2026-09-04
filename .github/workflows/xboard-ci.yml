@@ -100,5 +100,17 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      - name: Test Linux Agent lifecycle with real Mieru processes
+        shell: bash
+        run: |
+          cd tools/mita-control
+          go build -mod=readonly -o "$RUNNER_TEMP/rw-mita-control" .
+          go build -mod=readonly -o "$RUNNER_TEMP/rw-mita-daemon" ./daemon
+          cd ../..
+          RW_MITA_INTEGRATION=1 \
+          RW_MITA_TEST_HELPER="$RUNNER_TEMP/rw-mita-control" \
+          RW_MITA_TEST_DAEMON="$RUNNER_TEMP/rw-mita-daemon" \
+          npx tsx --test src/modules/mieru/mieru-runtime.linux.test.ts
+
       - name: Build
         run: npm run build

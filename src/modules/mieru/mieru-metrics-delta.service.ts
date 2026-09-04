@@ -3,12 +3,12 @@ import { Injectable } from '@nestjs/common';
 import { TypedConfigService } from '@common/config/app-config';
 import { TMieruMetrics } from '@libs/contracts/models';
 
-import { MieruControlClient } from './mieru-control.client';
 import {
     MieruCumulativeUserCounters,
     MieruMetricsBaselineState,
     MieruMetricsBaselineStore,
 } from './mieru-metrics-baseline.store';
+import { MieruRuntimeService } from './mieru-runtime.service';
 
 export const MIERU_AGGREGATE_OUTBOUND_TAG = '__mieru_user_aggregate__';
 
@@ -40,10 +40,11 @@ export class MieruMetricsDeltaService {
     private baselineState = createEmptyBaselineState();
     private baselineStateLoaded = false;
     private pollQueue: Promise<void> = Promise.resolve();
+    private readonly usernames = new Map<string, string>();
 
     constructor(
         configService: TypedConfigService,
-        private readonly control: MieruControlClient,
+        private readonly control: MieruRuntimeService,
         private readonly baselineStore: MieruMetricsBaselineStore,
     ) {
         this.enabled = configService.getOrThrow('MIERU_ENABLED');
@@ -64,35 +65,41 @@ export class MieruMetricsDeltaService {
             const working = cloneBaselineState(this.baselineState);
             const consumerState = working[consumer];
             const baselines = consumerState.baselines;
-            const result: MieruUserDelta[] = [];
+            const result = new Map<string, MieruUserDelta>();
 
             if (!consumerState.initialized) {
                 consumerState.initialized = true;
                 for (const [username, counters] of current) {
                     baselines.set(username, counters);
-                    result.push({ username, uplink: 0, downlink: 0 });
+                    const logicalName = this.usernames.get(username)!;
+                    result.set(logicalName, { username: logicalName, uplink: 0, downlink: 0 });
                 }
                 await this.commitBaselineState(working);
-                return result;
+                return [...result.values()];
             }
 
             for (const [username, counters] of current) {
                 const baseline = baselines.get(username) ?? { uplink: 0n, downlink: 0n };
+                const logicalName = this.usernames.get(username)!;
+                const total = result.get(logicalName) ?? {
+                    username: logicalName,
+                    uplink: 0,
+                    downlink: 0,
+                };
+                const budget = MAX_SAFE_DELTA - BigInt(total.uplink) - BigInt(total.downlink);
 
                 const available = calculateAvailable(baseline, counters);
-                const emitted = allocatePair(available.uplink, available.downlink, MAX_SAFE_DELTA);
+                const emitted = allocatePair(available.uplink, available.downlink, budget);
                 if (reset) {
                     baselines.set(username, advanceBaseline(baseline, counters, emitted));
                 }
-                result.push({
-                    username,
-                    uplink: Number(emitted.uplink),
-                    downlink: Number(emitted.downlink),
-                });
+                total.uplink += Number(emitted.uplink);
+                total.downlink += Number(emitted.downlink);
+                result.set(logicalName, total);
             }
 
             await this.commitBaselineState(working);
-            return result;
+            return [...result.values()];
         });
     }
 
@@ -156,7 +163,18 @@ export class MieruMetricsDeltaService {
             throw new Error('Mieru metrics are not enabled for this node.');
         }
         const response = await this.control.status();
-        return parseCumulativeUsers(response.metrics);
+        const current = parseCumulativeUsers(response.metrics);
+        this.usernames.clear();
+        for (const username of current.keys()) this.usernames.set(username, username);
+        for (const [instance, metrics] of Object.entries(response.instanceMetrics ?? {}).sort()) {
+            for (const [username, counters] of parseCumulativeUsers(metrics)) {
+                const key = JSON.stringify([instance, username]);
+                if (current.has(key)) throw new Error('Mieru metric identity collision.');
+                current.set(key, counters);
+                this.usernames.set(key, username);
+            }
+        }
+        return current;
     }
 
     private async ensureBaselineStateLoaded(): Promise<void> {
