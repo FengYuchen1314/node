@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - xboard-dev
-  workflow_dispatch:
-
 permissions:
   contents: read
   packages: write
@@ -18,14 +16,73 @@ env:
   IMAGE_NAME: ghcr.io/fengyuchen1314/node
 
 jobs:
+  validate:
+    name: Validate node before publishing
+    if: github.repository == 'FengYuchen1314/node' && github.ref == 'refs/heads/xboard-dev'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Check changed-file formatting
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          base="$BEFORE_SHA"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            base="$(git rev-parse HEAD^ 2>/dev/null || git hash-object -t tree /dev/null)"
+          fi
+          mapfile -d '' -t changed_files < <(
+            git diff --name-only -z --diff-filter=ACMR \
+              "$base" "$GITHUB_SHA" -- \
+              '*.css' '*.js' '*.json' '*.md' \
+              '*.ts' '*.tsx' '*.yaml' '*.yml'
+          )
+          if ((${#changed_files[@]})); then
+            npx oxfmt --check "${changed_files[@]}"
+          fi
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
   build:
     name: Build and publish test image
+    if: github.repository == 'FengYuchen1314/node' && github.ref == 'refs/heads/xboard-dev'
+    needs: validate
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
