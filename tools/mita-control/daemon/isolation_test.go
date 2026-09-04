@@ -62,6 +62,8 @@ func startIsolatedServer(t *testing.T, username, password string) int {
 		case err := <-done:
 			if err != nil {
 				t.Errorf("daemon exit: %v: %s", err, logs.String())
+			} else if t.Failed() {
+				t.Logf("daemon diagnostics: %s", logs.String())
 			}
 		case <-time.After(5 * time.Second):
 			cmd.Process.Kill()
@@ -172,7 +174,7 @@ func exchange(port, target int, username, password string) error {
 		return err
 	}
 	if reply[0] != 5 || reply[1] != 0 {
-		return fmt.Errorf("SOCKS connect was rejected")
+		return fmt.Errorf("SOCKS connect was rejected: %x", reply)
 	}
 	remaining := 6
 	if reply[3] == 4 {
