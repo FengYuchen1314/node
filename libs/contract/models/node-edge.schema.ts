@@ -7,6 +7,7 @@ export const NODE_EDGE_STATUS_PATH = '/node/edge/status' as const;
 
 const HttpUpstreamSchema = z
     .url()
+    .max(2048)
     .transform((value) => new URL(value))
     .refine((value) => value.protocol === 'http:' || value.protocol === 'https:', {
         message: 'Edge upstream must use HTTP or HTTPS.',
@@ -14,6 +15,15 @@ const HttpUpstreamSchema = z
     .refine((value) => !value.username && !value.password && !value.hash, {
         message: 'Edge upstream must not contain credentials or a fragment.',
     })
+    .refine((value) => value.pathname === '/' && !value.search, {
+        message: 'Use an upstream origin without a path or query.',
+    })
+    .refine(
+        (value) => /^(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[a-f0-9:]+\])$/i.test(value.hostname),
+        {
+            message: 'Invalid upstream hostname.',
+        },
+    )
     .transform((value) => value.toString());
 
 export const NodeEdgeSiteSchema = z
