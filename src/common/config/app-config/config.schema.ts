@@ -37,6 +37,16 @@ export const configSchema = z
             .default('/var/lib/remnanode/mieru-metrics-baselines.json'),
         MITA_UDS_PATH: z.string().startsWith('/').default('/var/run/mita/mita.sock'),
         EDGE_ENABLED: booleanString(),
+        ANYTLS_ENABLED: booleanString(),
+        ANYTLS_STATE_DIR: z.string().startsWith('/').default('/var/lib/remnanode/anytls'),
+        ANYTLS_MIHOMO_PATH: z.string().startsWith('/').default('/usr/local/bin/rw-anytls-outer'),
+        ANYTLS_SINGBOX_PATH: z.string().startsWith('/').default('/usr/local/bin/rw-anytls-inner'),
+        ANYTLS_SUPERVISOR_PATH: z
+            .string()
+            .startsWith('/')
+            .default('/usr/local/bin/rw-core-supervisor'),
+        ANYTLS_STATS_PORT: z.coerce.number().int().min(1024).max(65535).default(15999),
+        ANYTLS_CONTROL_PORT: z.coerce.number().int().min(1024).max(65535).default(15998),
         EDGE_CONFIG_DIR: z.string().startsWith('/').default('/var/lib/remnanode/edge'),
         EDGE_HAPROXY_MASTER_SOCKET: z
             .string()

@@ -27,13 +27,40 @@ RUN go mod download && go mod verify
 
 COPY tools/mita-control/*.go ./
 COPY tools/mita-control/daemon ./daemon
+COPY tools/mita-control/supervisor ./supervisor
 
 ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
     go build -mod=readonly -trimpath -ldflags='-s -w' -o /out/rw-mita-control . \
     && CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
-    go build -mod=readonly -trimpath -ldflags='-s -w' -o /out/rw-mita-daemon ./daemon
+    go build -mod=readonly -trimpath -ldflags='-s -w' -o /out/rw-mita-daemon ./daemon \
+    && CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
+    go build -mod=readonly -trimpath -ldflags='-s -w' -o /out/rw-core-supervisor ./supervisor
+
+
+FROM --platform=$BUILDPLATFORM golang:1.26.8-alpine@sha256:ce864e7223ac17b1775e6fd0b4c0db580c2eb50e7953a427916379e4b92a1628 AS anytls-cores
+
+RUN apk add --no-cache git
+ARG TARGETOS
+ARG TARGETARCH
+# Unmodified upstream source, immutable commits. Build server accounting/session control in Actions.
+RUN git init /src/inner && git -C /src/inner remote add origin https://github.com/SagerNet/sing-box.git \
+    && git -C /src/inner fetch --depth 1 origin 0b8995879f29a9b98ee027bc17b75e101445b238 \
+    && git -C /src/inner checkout --detach FETCH_HEAD \
+    && test "$(git -C /src/inner rev-parse HEAD)" = 0b8995879f29a9b98ee027bc17b75e101445b238
+WORKDIR /src/inner
+RUN go mod download && go mod verify \
+    && CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
+    go build -mod=readonly -trimpath -tags with_v2ray_api,with_clash_api -ldflags='-s -w' -o /out/rw-anytls-inner ./cmd/sing-box
+RUN git init /src/outer && git -C /src/outer remote add origin https://github.com/MetaCubeX/mihomo.git \
+    && git -C /src/outer fetch --depth 1 origin ac017cdd246ce8bd547653d927e7bf77d7ee73d5 \
+    && git -C /src/outer checkout --detach FETCH_HEAD \
+    && test "$(git -C /src/outer rev-parse HEAD)" = ac017cdd246ce8bd547653d927e7bf77d7ee73d5
+WORKDIR /src/outer
+RUN go mod download && go mod verify \
+    && CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
+    go build -mod=readonly -trimpath -ldflags='-s -w' -o /out/rw-anytls-outer .
 
 
 FROM alpine:3.21 AS xray
@@ -116,6 +143,11 @@ COPY --from=asn /usr/local/share/asn /usr/local/share/asn
 COPY --from=geocheck /usr/local/bin/geocheck /usr/local/bin/geocheck
 COPY --from=mita-control /out/rw-mita-control /usr/local/bin/rw-mita-control
 COPY --from=mita-control /out/rw-mita-daemon /usr/local/bin/rw-mita-daemon
+COPY --from=mita-control /out/rw-core-supervisor /usr/local/bin/rw-core-supervisor
+COPY --from=anytls-cores /out/rw-anytls-inner /usr/local/bin/rw-anytls-inner
+COPY --from=anytls-cores /out/rw-anytls-outer /usr/local/bin/rw-anytls-outer
+COPY --from=anytls-cores /src/inner/LICENSE /usr/local/share/licenses/anytls-sing-box-LICENSE
+COPY --from=anytls-cores /src/outer/LICENSE /usr/local/share/licenses/anytls-mihomo-LICENSE
 
 COPY docker/rootfs/ /
 

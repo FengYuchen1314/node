@@ -3,6 +3,7 @@ import { Logger, Module, OnApplicationShutdown } from '@nestjs/common';
 import { IntegrationsModule } from '@integration-modules/integrations.module';
 
 import { PluginModule } from './_plugin/plugin.module';
+import { AnyTlsModule } from './anytls/anytls.module';
 import { AsnLmdbModule } from './asn-lmdb/asn-lmdb.module';
 import { CamouflageDomainModule } from './camouflage-domain/camouflage-domain.module';
 import { HandlerModule } from './handler/handler.module';
@@ -22,6 +23,7 @@ import { XrayModule } from './xray-core/xray.module';
         XrayModule,
         HandlerModule,
         MieruModule,
+        AnyTlsModule,
     ],
     providers: [],
 })

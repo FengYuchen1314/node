@@ -44,4 +44,5 @@ lerna-debug.log*
 /samples
 
 /build
+/test-dist
 *.tar.gz

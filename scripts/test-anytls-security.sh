@@ -24,18 +24,27 @@ git -C "$fixture_dir/sing-box-source" checkout --quiet --detach FETCH_HEAD
   cd "$fixture_dir/sing-box-source"
   go mod download
   go mod verify
-  go build -mod=readonly -trimpath -tags with_v2ray_api -ldflags '-s -w -buildid=' \
+  go build -mod=readonly -trimpath -tags with_v2ray_api,with_clash_api -ldflags '-s -w -buildid=' \
     -o "$fixture_dir/sing-box" ./cmd/sing-box
 )
 RW_MIHOMO_BINARY="$fixture_dir/mihomo" RW_ANYTLS_CERT_DIR="$fixture_dir/certs" \
   RW_ANYTLS_INNER_BINARY="$fixture_dir/sing-box" \
   node --test scripts/anytls-shadowtls-security.mjs
+(
+  cd tools/mita-control
+  go build -mod=readonly -trimpath -ldflags '-s -w' -o "$fixture_dir/rw-core-supervisor" ./supervisor
+)
+export RW_ANYTLS_RUNTIME_INTEGRATION=1 RW_MIHOMO_BINARY="$fixture_dir/mihomo" \
+  RW_ANYTLS_INNER_BINARY="$fixture_dir/sing-box" RW_ANYTLS_SUPERVISOR_BINARY="$fixture_dir/rw-core-supervisor" RW_ANYTLS_CERT_DIR="$fixture_dir/certs"
+npx tsx --test src/modules/anytls/anytls-runtime.linux.test.ts
+NODE_ENV=production npx rspack build --config scripts/anytls-runtime-test.rspack.mjs
+node --test test-dist/anytls-runtime.test.cjs
 if [[ -n "${RW_ANYTLS_EXPORT_DIR:-}" ]]; then
   mkdir -p "$RW_ANYTLS_EXPORT_DIR"
-  cp "$fixture_dir/mihomo" "$fixture_dir/sing-box" \
+  cp "$fixture_dir/mihomo" "$fixture_dir/sing-box" "$fixture_dir/rw-core-supervisor" test-dist/anytls-runtime.test.cjs \
     scripts/anytls-shadowtls-security.mjs scripts/anytls-test-stats.mjs \
     scripts/anytls-test-certificates.sh scripts/vps-anytls-security.sh "$RW_ANYTLS_EXPORT_DIR/"
   cp "$fixture_dir/sing-box-source/LICENSE" "$RW_ANYTLS_EXPORT_DIR/SINGBOX_LICENSE"
   printf '%s\n' "$server_commit" > "$RW_ANYTLS_EXPORT_DIR/SINGBOX_SOURCE_COMMIT"
-  printf '%s\n' 'with_v2ray_api' > "$RW_ANYTLS_EXPORT_DIR/SINGBOX_BUILD_TAGS"
+  printf '%s\n' 'with_v2ray_api,with_clash_api' > "$RW_ANYTLS_EXPORT_DIR/SINGBOX_BUILD_TAGS"
 fi
