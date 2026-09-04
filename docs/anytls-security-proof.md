@@ -114,7 +114,7 @@ safe stale-state maintenance and end-to-end delivery acknowledgements need furth
 
 Production certificate lifecycle, panel-driven user/session reconciliation, mixed Xray billing,
 crash-lossless accounting, shared-443 routing, panel-only artifact delivery, generated
-subscriptions/topology dependency preservation and browser/full API acceptance remain outstanding.
+subscriptions/topology dependency preservation and browser/Panel-to-Node acceptance remain outstanding.
 Managed revocation, rollback and graceful-restart accounting now have native tests, but those
 instantiate the runtime rather than calling the complete HTTPS/JWT Node API. These tests use one
 isolated VPS container, not multiple physical
@@ -169,4 +169,43 @@ The disposable container was removed and both PDF services stayed healthy, HTTP 
 The ec632cf image was compile-only, with WIP pushing still disabled at that checkpoint. Following
 it, the workflow publishes WIP images only to `sha-<source commit>` tags so complete-image API
 acceptance can run without updating `xboard-dev`. Publishing a hash tag is not deployment; full
-API and image-binary acceptance remain to be performed on that exact produced digest.
+API and image-binary acceptance at that checkpoint had not yet been performed.
+
+## Complete API image and unresolved native transport checkpoint
+
+Full-image testing found a duplicated controller prefix (`/node/node/anytls`). Commit
+`1af43c24048cdc19f2f457593b612e4f0e31ea0f` fixes the controller and adds route/guard regression
+coverage. It passed [CI](https://github.com/FengYuchen1314/node/actions/runs/33928518828) and
+the [image build](https://github.com/FengYuchen1314/node/actions/runs/33928518835).
+The image digest verified from Actions and the VPS pull is
+`sha256:f67a9bdb132f5770ffd7207394c85c88928356480d614075ae3e88483c30331f`.
+
+The complete image passed HTTPS/JWT API acceptance on 185.99.135.224 at
+`/opt/xboard-anytls-api-test.hHrTDqD6`, with no public ports or Docker socket. It rejects missing
+mTLS and missing/invalid JWT, starts two listeners, rejects invalid DTOs, reconciles unchanged
+intent without restarting, restores listeners after a full container restart, explicitly stops
+all six private runtime/control ports and remains stopped after another restart. This uses a
+private, disposable test CA and fresh credentials. The upstream JWT guard deliberately drops
+the connection rather than returning HTTP 401; the smoke now checks that exact behavior and
+checks authorized health after each rejection batch. The disposable container was removed.
+This establishes controller/lifecycle wiring, not protocol traffic or panel integration.
+
+**Native traffic acceptance remains failed and unresolved.** Earlier CI run
+33927680469 produced an empty HTTP response for a valid shared user. Five repetitions of the
+previous portable managed suite passed on the VPS, but that is not a fix. A new no-retry
+12-short-connection check reproduced the empty response on the VPS with the 1af43c2 artifact
+(`de279cd39c67fd157572449f9df7c35afad40e8efa858390badf7bc1f4e6d47b`), whose checksum was verified
+locally and remotely. The complete portable suite at `/opt/xboard-anytls-test.vQmKl59U` reported
+21 passes and 4 failures (25 tests including parents). One managed short-connection case and
+the security proof's remaining-user case failed. The failing managed request had zero requests
+received by the owned HTTP fixture, so target-response FIN timing is not an established cause.
+AnyTLS remains opt-in and is not exposed as a working managed panel protocol.
+
+The standalone diagnostic mode `RW_ANYTLS_DIAGNOSTIC_REPETITIONS=1..100` collects bounded native
+debug logs across fresh encrypted sessions. Neither CI nor portable acceptance enables that
+mode; it does not replace credential-rejection, accounting, revocation or lifecycle tests.
+On the same VPS, a diagnostic run of 30 fresh sessions and another of 100 sessions with
+`GOMAXPROCS=1` passed. A full 25-test run with additional debug logging also passed. Since no
+transport correction was made, these passes do not resolve or supersede the reproduced failure.
+The private diagnostic logs are retained at `/opt/xboard-anytls-diagnostic.aeZRO3GY`; all three
+diagnostic containers were removed. Do not infer stability from these subsequent passes.

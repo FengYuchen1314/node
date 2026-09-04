@@ -5,6 +5,7 @@ import { Injectable } from '@nestjs/common';
 
 import { AnyTlsConfigSchema, TAnyTlsConfig } from '@libs/contracts/models';
 
+import { detectCloudflareSignals } from '../camouflage-domain/cloudflare-signals';
 import { canonicalizeIp } from '../camouflage-domain/ip-address';
 
 export interface AnyTlsRenderOptions {
@@ -47,6 +48,17 @@ export function validateAnyTlsConfig(input: unknown, options: AnyTlsRenderOption
     ]);
     const local = localAddresses();
     for (const listener of config.listeners) {
+        // This synchronous guard also applies to saved-state restoration. DNS/ASN live validation
+        // still belongs at the managed deployment boundary; a supplied CF address must never pass.
+        if (
+            detectCloudflareSignals({
+                addresses: [endpointAddress(listener.camouflage.address)],
+                cnameChain: [listener.camouflage.serverName, listener.camouflage.address],
+                asn13335Matched: false,
+                serverHeader: null,
+            }).length
+        )
+            throw new Error('Cloudflare CDN endpoints cannot be used for AnyTLS camouflage.');
         if (reserved.has(listener.wrapperPort) || reserved.has(listener.innerPort))
             throw new Error('AnyTLS listener overlaps a management port.');
         const address = endpointAddress(listener.camouflage.address);

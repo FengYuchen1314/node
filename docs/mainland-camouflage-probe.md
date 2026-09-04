@@ -60,6 +60,10 @@ Script SHA-256: `5b906df66902e7c100aacaca48cf17cb3187d880beae88226b9587c5e75f789
 
 ### Still not an automatic allow-list
 
+The opt-in AnyTLS configuration renderer additionally rejects pinned Cloudflare IPv4/IPv6
+addresses (including mapped IPv4) and known Cloudflare hostnames before preparing or restoring
+a listener. This is defense in depth, not live DNS/ASN validation of arbitrary custom domains.
+
 Every report still sets `automaticallyEligible: false`. These are discovery observations, not
 an authenticated panel probe API, a current deployment allow-list, nationwide reachability or
 a guarantee of no GFW interference. IPv6 TLS connectivity and IPv6 origin-ASN lookup were not

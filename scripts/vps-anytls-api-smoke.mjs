@@ -138,13 +138,21 @@ const initial = await ready();
 if (phase === 'initial') {
     assert.equal(initial.isStarted, false);
     for (const auth of ['no-jwt', 'bad-jwt']) {
-        assert.equal((await api('status', undefined, auth)).status, 401);
-        assert.equal((await api('start', config, auth)).status, 401);
-        assert.equal((await api('stop', {}, auth)).status, 401);
-        assert.equal((await api('stats', {}, auth)).status, 401);
+        // The upstream JWT guard deliberately destroys the socket instead of exposing a 401.
+        for (const [path, body] of [
+            ['status', undefined],
+            ['start', config],
+            ['stop', {}],
+            ['stats', {}],
+        ])
+            await assert.rejects(api(path, body, auth), (error) => error.code === 'ECONNRESET');
+        assert.equal((await status()).isStarted, false);
     }
     await assert.rejects(api('status', undefined, 'no-mtls'));
     await assertPorts(false);
+    process.stdout.write(
+        'PASS: mTLS/JWT reject unauthorized API access without starting listeners\n',
+    );
     const started = await api('start', config);
     assert.equal(started.status, 201);
     assert.equal(started.body.response.operation, 'STARTED');

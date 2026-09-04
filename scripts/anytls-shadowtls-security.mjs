@@ -22,7 +22,7 @@ assert(binary && certDir, 'Provide RW_MIHOMO_BINARY and fresh RW_ANYTLS_CERT_DIR
 assert.equal(process.platform, 'linux');
 const baseConfig = {
     mode: 'rule',
-    'log-level': 'info',
+    'log-level': 'debug',
     ipv6: false,
     'geo-auto-update': false,
     profile: { 'store-selected': false, 'store-fake-ip': false },
@@ -450,6 +450,10 @@ test(
                         `${name}: rejected path leaked an HTTP request`,
                     );
                 } else {
+                    if (!response.startsWith('HTTP/1.1 200 ')) {
+                        t.diagnostic(`case=${name} fixtureRequests=${requests.length - before}`);
+                        t.diagnostic(logs.map((get) => get()).join('\n'));
+                    }
                     assert.match(response, /^HTTP\/1\.1 200 /);
                     assert(response.includes(responseMarker));
                     assert.equal(requests.length, before + 1);
@@ -466,6 +470,17 @@ test(
                         'Unexpected download confidentiality',
                     );
                 }
+            }
+
+            if (process.env.RW_ANYTLS_DIAGNOSTIC_REPETITIONS) {
+                const repetitions = Number(process.env.RW_ANYTLS_DIAGNOSTIC_REPETITIONS);
+                assert(Number.isInteger(repetitions) && repetitions > 0 && repetitions <= 100);
+                // Explicit diagnostic mode, never enabled by the CI/portable acceptance scripts.
+                for (let attempt = 0; attempt < repetitions; attempt++)
+                    await t.test(`fresh encrypted session ${attempt + 1}`, () =>
+                        clientCase(`diagnostic-${attempt + 1}`),
+                    );
+                return;
             }
 
             await t.test(

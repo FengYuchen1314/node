@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { TypedConfigService } from '@common/config/app-config';
 import { AnyTlsConfigSchema, TAnyTlsConfig } from '@libs/contracts/models';
 
-import { AnyTlsConfigRenderer } from './anytls-config';
+import { AnyTlsConfigRenderer, validateAnyTlsConfig } from './anytls-config';
 import { AnyTlsRuntimeIO, PreparedAnyTls } from './anytls-runtime.io';
 import { AnyTlsRuntimeService, AnyTlsUpdateError, difference } from './anytls-runtime.service';
 import {
@@ -39,6 +39,25 @@ const desired = (port = 14001): TAnyTlsConfig => ({
             users: [{ name: '1', password: 'f'.repeat(48) }],
         },
     ],
+});
+
+test('AnyTLS preparation rejects known Cloudflare camouflage before TLS parsing or process mutation', () => {
+    const options = {
+        statsPort: 15999,
+        controlPort: 15998,
+        controlSecret: 'fixture',
+        nodePort: 2222,
+    };
+    for (const address of ['104.16.0.1', '2606:4700::1', '::ffff:104.16.0.1']) {
+        const config = desired();
+        config.listeners[0].camouflage.address = address;
+        assert.throws(() => validateAnyTlsConfig(config, options), /Cloudflare CDN/);
+    }
+    for (const serverName of ['www.cloudflare.com', 'edge.cloudflare.net']) {
+        const config = desired();
+        config.listeners[0].camouflage.serverName = serverName;
+        assert.throws(() => validateAnyTlsConfig(config, options), /Cloudflare CDN/);
+    }
 });
 class FakeIO {
     saved: AnyTlsRuntimeState = { version: 1, desired: null, totals: {}, seen: {}, billed: {} };
