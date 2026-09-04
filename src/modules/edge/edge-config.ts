@@ -122,7 +122,7 @@ export function renderCaddyfile(plan: TNodeEdgePlan): string {
     return `{
     admin 127.0.0.1:2019
     http_port 18080
-    https_port 18443
+${sites.length ? '    https_port 18443' : ''}
     default_bind 127.0.0.1
     auto_https disable_redirects
     servers {

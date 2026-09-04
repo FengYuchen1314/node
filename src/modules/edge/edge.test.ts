@@ -63,6 +63,9 @@ test('Caddy renders private listeners, public HTTPS redirects and loop protectio
     assert.match(config, /reverse_proxy "http:\/\/127\.0\.0\.1:3000"/);
     assert.match(config, /respond @loop "Reverse proxy loop detected" 508/);
     assert.doesNotMatch(config, /tls_insecure_skip_verify/);
+    const unconfigured = renderCaddyfile({ ...plan, management: null });
+    assert.doesNotMatch(unconfigured, /https_port 18443/);
+    assert.match(unconfigured, /http:\/\/127\.0\.0\.1:18443/);
 });
 
 test('edge rejects unbound routes, config injection, internal-port targets and local DNS loops', async () => {
