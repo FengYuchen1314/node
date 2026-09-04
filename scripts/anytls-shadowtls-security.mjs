@@ -354,7 +354,10 @@ test(
                 try {
                     response = await request(port, targetPort, marker, options.host);
                 } catch (error) {
-                    if (!options.deny) throw error;
+                    if (!options.deny) {
+                        t.diagnostic(logs.map((get) => get()).join('\n'));
+                        throw error;
+                    }
                 } finally {
                     await stop(child);
                 }
