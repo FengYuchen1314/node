@@ -166,7 +166,7 @@ test(
         };
         const adapted = await fetch('http://127.0.0.1:2019/adapt', {
             method: 'POST',
-            headers: { 'Content-Type': 'text/caddyfile' },
+            headers: { 'Content-Type': 'text/caddyfile', Origin: 'http://127.0.0.1:2019' },
             body: renderCaddyfile(webPlan),
         });
         assert.equal(adapted.status, 200, await adapted.clone().text());
@@ -176,7 +176,7 @@ test(
         result.apps.tls.automation = { policies: [{ issuers: [{ module: 'internal' }] }] };
         const loaded = await fetch('http://127.0.0.1:2019/load', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:2019' },
             body: JSON.stringify(result),
         });
         assert.equal(loaded.status, 200, await loaded.text());
@@ -187,10 +187,11 @@ test(
         assert.equal(redirect.status, 308);
         assert.equal(redirect.headers.get('location'), 'https://website.example.invalid/path?q=1');
         await eventually(async () => (await httpsGet()).body === 'website-upstream');
-        const active = (await (await fetch('http://127.0.0.1:2019/config/')).json()) as Record<
-            string,
-            any
-        >;
+        const active = (await (
+            await fetch('http://127.0.0.1:2019/config/', {
+                headers: { Origin: 'http://127.0.0.1:2019' },
+            })
+        ).json()) as Record<string, any>;
         for (const server of Object.values(active.apps.http.servers) as Array<{
             listen: string[];
         }>) {

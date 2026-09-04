@@ -123,7 +123,12 @@ export class EdgeConfigIO {
     private async request(path: string, body?: string, contentType?: string): Promise<string> {
         const response = await fetch(`${this.admin}${path}`, {
             method: body === undefined ? 'GET' : 'POST',
-            headers: contentType ? { 'Content-Type': contentType } : {},
+            // Node fetch sends Sec-Fetch-Mode: cors. Caddy consequently checks
+            // Origin even without enforce_origin; keep its CSRF protection on.
+            headers: {
+                Origin: new URL(this.admin).origin,
+                ...(contentType ? { 'Content-Type': contentType } : {}),
+            },
             body,
             redirect: 'error',
             signal: AbortSignal.timeout(15_000),
@@ -147,6 +152,7 @@ export class EdgeConfigIO {
             });
             socket.once('end', () => resolve(output));
             socket.once('error', reject);
+            socket.once('close', () => reject(new Error('HAProxy control closed before EOF.')));
         });
     }
 }

@@ -141,6 +141,28 @@ const service = (io: FakeIO, enabled = true) =>
         io as unknown as EdgeConfigIO,
     );
 
+test('Caddy control requests supply a matching Origin without disabling CSRF checks', async (context) => {
+    const fetchMock = context.mock.method(
+        globalThis,
+        'fetch',
+        async (_url: string, init: RequestInit) => {
+            assert.equal(new Headers(init.headers).get('Origin'), 'http://127.0.0.1:2019');
+            assert.equal(init.redirect, 'error');
+            return new Response('{}');
+        },
+    );
+    const values: Record<string, string> = {
+        EDGE_CONFIG_DIR: '.',
+        EDGE_HAPROXY_MASTER_SOCKET: 'nonexistent-edge-test-socket',
+        EDGE_CADDY_ADMIN_URL: 'http://127.0.0.1:2019',
+    };
+    const io = new EdgeConfigIO({
+        getOrThrow: (key: string) => values[key],
+    } as unknown as TypedConfigService);
+    assert.equal((await io.status()).caddy, true);
+    assert.equal(fetchMock.mock.callCount(), 1);
+});
+
 test('edge commits only after the core and both edge processes succeed', async () => {
     const io = new FakeIO();
     const edge = service(io);
