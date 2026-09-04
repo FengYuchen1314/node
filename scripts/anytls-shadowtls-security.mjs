@@ -425,7 +425,12 @@ test(
                 const before = requests.length;
                 let response = '';
                 try {
-                    response = await request(port, targetPort, marker, options.host);
+                    response = await request(
+                        port,
+                        options.targetInner ? innerPort : targetPort,
+                        marker,
+                        options.host,
+                    );
                 } catch (error) {
                     if (!options.deny) {
                         t.diagnostic(logs.map((get) => get()).join('\n'));
@@ -497,6 +502,12 @@ test(
                     },
                 }),
             );
+            await t.test('wrong outer AnyTLS password fails closed', () =>
+                clientCase('wrong-wrapper-password', {
+                    deny: true,
+                    wrapper: { password: randomBytes(24).toString('hex') },
+                }),
+            );
             await t.test('wrong outer certificate CA pin fails closed', () =>
                 clientCase('wrong-outer-pin', {
                     deny: true,
@@ -505,6 +516,15 @@ test(
             );
             await t.test('wrapper alone cannot bypass inner encryption', () =>
                 clientCase('wrapper-bypass', { deny: true, wrapperOnly: true }),
+            );
+            await t.test(
+                'plaintext sent to the allowed inner port cannot bypass its TLS handshake',
+                () =>
+                    clientCase('plaintext-inner-bypass', {
+                        deny: true,
+                        wrapperOnly: true,
+                        targetInner: true,
+                    }),
             );
             await t.test('wrapper hostname cannot bypass the destination-port restriction', () =>
                 clientCase('hostname-bypass', { deny: true, wrapperOnly: true, host: 'localhost' }),
