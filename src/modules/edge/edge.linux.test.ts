@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { createServer as createHttpServer } from 'node:http';
+import { createServer as createHttpServer, request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -180,12 +180,38 @@ test(
             body: JSON.stringify(result),
         });
         assert.equal(loaded.status, 200, await loaded.text());
-        const redirect = await fetch('http://127.0.0.1/path?q=1', {
-            headers: { Host: 'website.example.invalid' },
-            redirect: 'manual',
-        });
+        const redirect = await new Promise<{ status: number; location?: string }>(
+            (resolve, reject) => {
+                // Use the low-level client to preserve the virtual-host override;
+                // recent Node fetch versions derive Host from the URL instead.
+                const request = httpRequest(
+                    {
+                        hostname: '127.0.0.1',
+                        port: 80,
+                        path: '/path?q=1',
+                        headers: { Host: 'website.example.invalid' },
+                        timeout: 3_000,
+                    },
+                    (response) => {
+                        response.resume();
+                        response.once('end', () =>
+                            resolve({
+                                status: response.statusCode!,
+                                location: response.headers.location,
+                            }),
+                        );
+                        response.once('error', reject);
+                    },
+                );
+                request.once('error', reject);
+                request.once('timeout', () =>
+                    request.destroy(new Error('HTTP redirect probe timed out.')),
+                );
+                request.end();
+            },
+        );
         assert.equal(redirect.status, 308);
-        assert.equal(redirect.headers.get('location'), 'https://website.example.invalid/path?q=1');
+        assert.equal(redirect.location, 'https://website.example.invalid/path?q=1');
         await eventually(async () => (await httpsGet()).body === 'website-upstream');
         const active = (await (
             await fetch('http://127.0.0.1:2019/config/', {
