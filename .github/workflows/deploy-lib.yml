@@ -8,6 +8,7 @@ on:
 jobs:
   send-start-deploy-telegram-message:
     name: Send Telegram message
+    if: github.repository_owner == 'remnawave'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source code
@@ -25,6 +26,7 @@ jobs:
             commit timestamp: ${{ github.event.head_commit.timestamp }}
 
   build:
+    if: github.repository_owner == 'remnawave'
     runs-on: ubuntu-latest
     permissions:
       contents: read
