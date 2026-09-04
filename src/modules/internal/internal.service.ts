@@ -8,6 +8,9 @@ import { HashedSet } from '@remnawave/hashed-set';
 
 import { StartXrayCommand } from '@libs/contracts/commands';
 
+const getSocksUserHashIdentity = (username: string, password: string): string =>
+    `${username}\0${password}`;
+
 @Injectable()
 export class InternalService {
     private readonly logger = new Logger(InternalService.name);
@@ -70,6 +73,45 @@ export class InternalService {
                         for (const client of inbound.settings.clients) {
                             if (client.id) {
                                 usersSet.add(client.id);
+                            }
+                        }
+                    }
+
+                    if (
+                        inbound.protocol === 'socks' &&
+                        inbound.settings &&
+                        inbound.settings.users &&
+                        Array.isArray(inbound.settings.users)
+                    ) {
+                        for (const user of inbound.settings.users) {
+                            if (
+                                typeof user.user === 'string' &&
+                                user.user.length > 0 &&
+                                typeof user.pass === 'string'
+                            ) {
+                                usersSet.add(getSocksUserHashIdentity(user.user, user.pass));
+                            }
+                        }
+                    }
+
+                    if (
+                        inbound.protocol === 'socks' &&
+                        inbound.settings &&
+                        inbound.settings.accounts &&
+                        Array.isArray(inbound.settings.accounts)
+                    ) {
+                        for (const legacyAccount of inbound.settings.accounts) {
+                            if (
+                                typeof legacyAccount.user === 'string' &&
+                                legacyAccount.user.length > 0 &&
+                                typeof legacyAccount.pass === 'string'
+                            ) {
+                                usersSet.add(
+                                    getSocksUserHashIdentity(
+                                        legacyAccount.user,
+                                        legacyAccount.pass,
+                                    ),
+                                );
                             }
                         }
                     }
