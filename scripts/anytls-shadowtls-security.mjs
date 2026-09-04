@@ -247,19 +247,19 @@ test(
                     version: 3,
                     'strict-mode': true,
                     users: [{ name: 'wrapper', password: shadowPassword }],
-                    handshake: { dest: `127.0.0.1:${camouflagePort}` },
+                    // The built-in handshake dialer otherwise follows the global reject rule.
+                    handshake: { dest: `127.0.0.1:${camouflagePort}`, proxy: 'DIRECT' },
                 },
             });
             const exactTcpTarget = (port) =>
                 `AND,((NETWORK,TCP),(IP-CIDR,127.0.0.1/32),(DST-PORT,${port})),DIRECT`;
+            // Separate logical runtimes: the inner egress is not an accidental loop back into
+            // the outer process. Do not disable Mihomo's loopback protection to make this pass.
             await start(
-                'server',
+                'inner-server',
                 {
                     ...baseConfig,
                     listeners: [
-                        shadowListener('outer', outerPort, 'outer-only-inner'),
-                        // Deliberately unencrypted, isolated positive control. Never ship this listener.
-                        shadowListener('insecure-control', controlPort, 'inner-only-fixture'),
                         {
                             name: 'inner',
                             type: 'anytls',
@@ -272,11 +272,26 @@ test(
                         },
                     ],
                     'sub-rules': {
+                        'inner-only-fixture': [exactTcpTarget(targetPort), 'MATCH,REJECT'],
+                    },
+                },
+                [innerPort],
+            );
+            await start(
+                'outer-server',
+                {
+                    ...baseConfig,
+                    listeners: [
+                        shadowListener('outer', outerPort, 'outer-only-inner'),
+                        // Deliberately unencrypted, isolated positive control. Never ship this listener.
+                        shadowListener('insecure-control', controlPort, 'inner-only-fixture'),
+                    ],
+                    'sub-rules': {
                         'outer-only-inner': [exactTcpTarget(innerPort), 'MATCH,REJECT'],
                         'inner-only-fixture': [exactTcpTarget(targetPort), 'MATCH,REJECT'],
                     },
                 },
-                [innerPort, outerPort, controlPort],
+                [outerPort, controlPort],
             );
 
             let capture = [];
