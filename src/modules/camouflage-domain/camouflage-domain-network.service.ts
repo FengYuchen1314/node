@@ -59,8 +59,9 @@ export class CamouflageDomainNetworkService {
         domain: string,
         address: string,
         signal: AbortSignal,
+        port = 443,
     ): Promise<CamouflageDomainNetworkObservation> {
-        const socket = await openBoundTlsSocket(domain, address, signal);
+        const socket = await openBoundTlsSocket(domain, address, signal, connectTls, port);
         try {
             const tls = readTlsObservation(socket, domain);
             const http = await requestHttp2Head(socket, domain, signal);
@@ -76,6 +77,7 @@ export function openBoundTlsSocket(
     address: string,
     signal: AbortSignal,
     connect: TlsConnectFunction = connectTls,
+    port = 443,
 ): Promise<TLSSocket> {
     return new Promise<TLSSocket>((resolve, reject) => {
         let socket: TLSSocket;
@@ -119,7 +121,7 @@ export function openBoundTlsSocket(
             socket = connect(
                 {
                     host: address,
-                    port: 443,
+                    port,
                     family: isIP(address) as 4 | 6,
                     servername: domain,
                     ALPNProtocols: ['h2'],

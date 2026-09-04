@@ -21,6 +21,7 @@ import { IntegrationsService } from '@integration-modules/integrations.service';
 import { ResetPluginsCommand } from '../_plugin/commands/reset-plugins/reset-plugins.command';
 import { RunPreStartCommand } from '../_plugin/commands/run-pre-start/run-pre-start.command';
 import { GetTorrentBlockerStateQuery } from '../_plugin/queries/get-torrent-blocker-state';
+import { CamouflageRuntimePolicy } from '../camouflage-domain/camouflage-runtime-policy.service';
 import { InternalService } from '../internal/internal.service';
 import { GetInterfaceStatsQuery } from '../network-stats/queries/get-interface-stats/get-interface-stats.query';
 import { CoreLoaderService } from './core-loader.service';
@@ -58,6 +59,7 @@ export class XrayService implements OnApplicationBootstrap {
     private isXrayOnline: boolean = false;
     private isXrayStartedProccesing: boolean = false;
     private nodeVersion: string = '0.0.0';
+    private camouflageFingerprint: string | undefined;
     constructor(
         @InjectXtls() private readonly xtlsSdk: XtlsApi,
         private readonly xrayProcess: XrayProcessService,
@@ -68,6 +70,7 @@ export class XrayService implements OnApplicationBootstrap {
         private readonly configService: TypedConfigService,
         private readonly queryBus: QueryBus,
         private readonly commandBus: CommandBus,
+        private readonly camouflage: CamouflageRuntimePolicy,
     ) {
         this.internal = {
             socketPath: this.configService.getOrThrow('INTERNAL_SOCKET_PATH'),
@@ -128,6 +131,9 @@ export class XrayService implements OnApplicationBootstrap {
         this.isXrayStartedProccesing = true;
 
         try {
+            // Validate and pin every REALITY target before integrations, user state or core restart.
+            // This applies to direct start, updates, forced starts and shared-edge rollback alike.
+            const camouflage = await this.camouflage.prepareXray(body.xrayConfig);
             const integrations = await this.integrations.sync(
                 body.internals.integrations,
                 body.internals.metadata,
@@ -148,7 +154,12 @@ export class XrayService implements OnApplicationBootstrap {
                 );
             }
 
-            if (this.isXrayOnline && !this.disableHashedSetCheck && !body.internals.forceRestart) {
+            if (
+                this.isXrayOnline &&
+                !this.disableHashedSetCheck &&
+                !body.internals.forceRestart &&
+                camouflage.fingerprint === this.camouflageFingerprint
+            ) {
                 const { isOk } = await this.xtlsSdk.stats.getSysStats();
 
                 let shouldRestart = false;
@@ -184,7 +195,7 @@ export class XrayService implements OnApplicationBootstrap {
             const tblockerState = await this.queryBus.execute(new GetTorrentBlockerStateQuery());
 
             const fullConfig = generateApiConfig({
-                config: body.xrayConfig,
+                config: camouflage.config,
                 torrentBlockerState: tblockerState,
                 internal: this.internal,
             });
@@ -237,6 +248,7 @@ export class XrayService implements OnApplicationBootstrap {
             }
 
             this.isXrayOnline = true;
+            this.camouflageFingerprint = camouflage.fingerprint;
 
             await this.refreshXrayVersion();
 

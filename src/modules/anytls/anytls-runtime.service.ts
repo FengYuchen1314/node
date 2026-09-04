@@ -1,8 +1,15 @@
-import { Logger, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+    BadRequestException,
+    Logger,
+    Injectable,
+    OnModuleDestroy,
+    OnModuleInit,
+} from '@nestjs/common';
 
 import { TypedConfigService } from '@common/config/app-config';
 import { AnyTlsConfigSchema, TAnyTlsConfig } from '@libs/contracts/models';
 
+import { CamouflageRuntimePolicy } from '../camouflage-domain/camouflage-runtime-policy.service';
 import { AnyTlsRuntimeIO } from './anytls-runtime.io';
 import { AnyTlsRuntimeState, AnyTlsRuntimeStore } from './anytls-runtime.store';
 import { AnyTlsCounters } from './anytls-stats.client';
@@ -33,6 +40,7 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
         private readonly env: TypedConfigService,
         private readonly io: AnyTlsRuntimeIO,
         private readonly store: AnyTlsRuntimeStore,
+        private readonly camouflage: CamouflageRuntimePolicy,
     ) {}
 
     async onModuleInit(): Promise<void> {
@@ -40,7 +48,16 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
         await this.lock(async () => {
             await this.io.acquire();
             const state = await this.load();
-            if (state.desired?.listeners.length) await this.applyUnlocked(state.desired);
+            if (state.desired?.listeners.length) {
+                try {
+                    await this.applyUnlocked(state.desired);
+                } catch {
+                    // Keep the authenticated management API available so an invalid/expired saved
+                    // endpoint can be replaced or stopped. Never start it just to restore availability.
+                    this.lastError = 'Saved AnyTLS configuration could not be restored safely.';
+                    this.logger.error(this.lastError);
+                }
+            }
         });
         this.timer = setInterval(() => {
             if (this.checkpointPending || this.stopped) return;
@@ -149,7 +166,12 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
         const state = await this.load();
         const previous = state.desired;
         // Validate certificate identity and both native configs before touching a live runtime.
-        this.io.validate(config);
+        try {
+            this.io.validate(config);
+        } catch {
+            throw new BadRequestException('AnyTLS listener configuration failed validation.');
+        }
+        await this.camouflage.assertAnyTls(config);
         if (this.io.isRunning() && JSON.stringify(previous) === JSON.stringify(config)) {
             this.lastError = null;
             return { isStarted: true, operation: 'UNCHANGED' };
@@ -174,6 +196,7 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
                 await this.retire();
                 await this.persist({ ...this.state!, desired: null, seen: {} });
                 if (previous?.listeners.length) {
+                    await this.camouflage.assertAnyTls(previous);
                     const rollback = await this.io.prepare(previous);
                     try {
                         await this.io.start(rollback);

@@ -209,3 +209,31 @@ On the same VPS, a diagnostic run of 30 fresh sessions and another of 100 sessio
 transport correction was made, these passes do not resolve or supersede the reproduced failure.
 The private diagnostic logs are retained at `/opt/xboard-anytls-diagnostic.aeZRO3GY`; all three
 diagnostic containers were removed. Do not infer stability from these subsequent passes.
+
+## Live camouflage deployment guard
+
+The Agent now checks REALITY and AnyTLS camouflage at actual start/reconcile boundaries, not
+only through the optional domain-discovery API. It rejects observed Cloudflare IP ranges,
+CNAME/hostname signals, available ASN 13335 prefixes, Server headers and CF-Ray, including a
+Cloudflare answer in the other address family. DNS failures and nonpublic destinations fail
+closed. Every selected endpoint must complete public-CA/SAN-verified TLS 1.3, X25519 and HTTP/2
+without redirects, with at least 14 days remaining on the certificate.
+
+REALITY targets are pinned to the verified address while preserving SNI, and the binding
+fingerprint participates in restart decisions. Unchanged requests still revalidate. AnyTLS
+rollback and saved-state restoration revalidate too; unsafe restoration leaves its authenticated
+management API available without starting listeners. A rejected update does not mutate the
+previous running configuration. This is not periodic enforcement on already-running processes,
+an absolute guarantee about concealed CDN ownership, or proof of mainland reachability.
+
+The API smoke now uses live public camouflage endpoints with the production validator, checks
+CF/private/unresolvable rejection before and after a successful start, and checks unsafe saved
+state on a full reboot. Only in-process native fixtures substitute their own network policy;
+there is no production API/environment option to bypass the guard. The older complete-image
+checkpoint above predates this guard. Full-image verification of this change is pending.
+
+Local checks: 89 Node tests passed, 4 Linux-only tests skipped; all 9 standalone probe tests,
+type-check and lint passed. Previous CI
+[33929716781](https://github.com/FengYuchen1314/node/actions/runs/33929716781) again failed the
+compiled short-connection test with zero fixture requests. Its separate image build succeeded;
+that does not resolve the native transport failure.

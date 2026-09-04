@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { TypedConfigService } from '@common/config/app-config';
 import { AnyTlsConfigSchema, TAnyTlsConfig } from '@libs/contracts/models';
 
+import { CamouflageRuntimePolicy } from '../camouflage-domain/camouflage-runtime-policy.service';
 import { AnyTlsConfigRenderer, validateAnyTlsConfig } from './anytls-config';
 import { AnyTlsRuntimeIO, PreparedAnyTls } from './anytls-runtime.io';
 import { AnyTlsRuntimeService, AnyTlsUpdateError, difference } from './anytls-runtime.service';
@@ -123,11 +124,12 @@ class FakeIO {
         this.counters[name] = { uplink: String(up), downlink: String(down) };
     }
 }
-function service(io: FakeIO, enabled = true) {
+function service(io: FakeIO, enabled = true, check: () => Promise<void> = async () => {}) {
     return new AnyTlsRuntimeService(
         { getOrThrow: () => enabled } as unknown as TypedConfigService,
         io as unknown as AnyTlsRuntimeIO,
         io as unknown as AnyTlsRuntimeStore,
+        { assertAnyTls: check } as unknown as CamouflageRuntimePolicy,
     );
 }
 
@@ -179,6 +181,82 @@ test('unchanged reconciliation does not restart or keep writing private generati
     assert.equal(io.starts, 1);
     assert.equal(io.preparedCount, 1);
     await runtime.onModuleDestroy();
+});
+
+test('live camouflage rejection preserves the prior runtime and also gates unchanged reconciliation', async () => {
+    const io = new FakeIO();
+    let denied = false;
+    let checks = 0;
+    const runtime = service(io, true, async () => {
+        checks++;
+        if (denied) throw new Error('Cloudflare CDN camouflage is forbidden.');
+    });
+    try {
+        await runtime.apply(desired());
+        const previous = structuredClone(io.saved);
+        denied = true;
+        for (const config of [desired(14002), desired()]) {
+            await assert.rejects(runtime.apply(config), /Cloudflare CDN/);
+            assert.deepEqual(io.saved, previous);
+            assert.equal(io.preparedCount, 1);
+            assert.equal(io.starts, 1);
+            assert.equal(io.stops, 0);
+            assert.equal(io.running, true);
+        }
+        assert.equal(checks, 3);
+        // Operators must still be able to stop when DNS or the camouflage service is unavailable.
+        await runtime.stop();
+        assert.equal(checks, 3);
+        assert.equal(io.running, false);
+    } finally {
+        await runtime.onModuleDestroy();
+    }
+});
+
+test('rollback revalidates the old camouflage and cannot restart a now-forbidden endpoint', async () => {
+    const io = new FakeIO();
+    let checks = 0;
+    const runtime = service(io, true, async () => {
+        if (++checks === 3) throw new Error('Cloudflare CDN camouflage is forbidden.');
+    });
+    try {
+        await runtime.apply(desired());
+        io.failStart = 1;
+        await assert.rejects(
+            runtime.apply(desired(14002)),
+            (error) => error instanceof AnyTlsUpdateError && !error.rollbackSucceeded,
+        );
+        assert.equal(checks, 3);
+        assert.equal(io.preparedCount, 2);
+        assert.equal(io.starts, 1);
+        assert.equal(io.running, false);
+        assert.equal(io.saved.desired, null);
+    } finally {
+        await runtime.onModuleDestroy();
+    }
+});
+
+test('unsafe saved camouflage cannot start after reboot but management and explicit stop remain available', async () => {
+    const io = new FakeIO();
+    io.saved.desired = desired();
+    const runtime = service(io, true, async () => {
+        throw new Error('Cloudflare CDN camouflage is forbidden.');
+    });
+    try {
+        await runtime.onModuleInit();
+        assert.deepEqual(await runtime.status(), {
+            available: true,
+            isStarted: false,
+            desiredListeners: 1,
+            error: 'Saved AnyTLS configuration could not be restored safely.',
+        });
+        assert.equal(io.preparedCount, 0);
+        assert.equal(io.starts, 0);
+        await runtime.stop();
+        assert.equal(io.saved.desired, null);
+    } finally {
+        await runtime.onModuleDestroy();
+    }
 });
 
 test('cumulative users are not replayed by parallel consumers or after an Agent restart', async () => {

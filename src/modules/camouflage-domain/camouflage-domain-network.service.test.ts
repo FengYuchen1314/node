@@ -30,6 +30,17 @@ test('TLS connection is pinned to the resolved IP while preserving domain SNI', 
     assert.equal(captured?.maxVersion, 'TLSv1.3');
     assert.equal(captured?.ecdhCurve, 'X25519');
     assert.deepEqual(captured?.ALPNProtocols, ['h2']);
+    assert.equal(captured?.port, 443);
+    await assert.rejects(
+        openBoundTlsSocket(
+            'example.com',
+            '93.184.216.34',
+            new AbortController().signal,
+            connect,
+            8443,
+        ),
+    );
+    assert.equal(captured?.port, 8443);
 });
 
 test('an aborted TLS connection fails closed as a validation timeout', async () => {

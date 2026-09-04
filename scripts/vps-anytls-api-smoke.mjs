@@ -2,6 +2,7 @@
 // runtime suite; this script verifies the complete image, controller wiring and durable intent.
 import assert from 'node:assert/strict';
 import { sign, randomBytes } from 'node:crypto';
+import { resolve4 } from 'node:dns/promises';
 import { once } from 'node:events';
 import { readFile, writeFile } from 'node:fs/promises';
 import { request } from 'node:https';
@@ -29,15 +30,17 @@ if (phase === 'setup') {
     );
     const config = { version: 1, listeners: [] };
     for (const [id, tag, sni, wrapperPort, innerPort] of [
-        ['11111111-1111-4111-8111-111111111111', 'A', 'camouflage.test', 14001, 16001],
-        ['22222222-2222-4222-8222-222222222222', 'B', 'camouflage-alt.test', 14002, 16002],
+        ['11111111-1111-4111-8111-111111111111', 'A', 'lax1.vultrobjects.com', 14001, 16001],
+        ['22222222-2222-4222-8222-222222222222', 'B', 'sjc1.vultrobjects.com', 14002, 16002],
     ])
         config.listeners.push({
             id,
             tag,
             wrapperPort,
             innerPort,
-            camouflage: { serverName: sni, address: '127.0.0.1', port: 18400 },
+            // Setup only resolves the fixture. The real Agent must perform live DNS/CF/TLS checks;
+            // no test CA, private address or allow-unverified option is supplied to that guard.
+            camouflage: { serverName: sni, address: (await resolve4(sni))[0], port: 443 },
             wrapperPassword: randomBytes(32).toString('hex'),
             shadowPassword: randomBytes(32).toString('hex'),
             tls: {
@@ -51,8 +54,19 @@ if (phase === 'setup') {
     await writeFile('/test/fixture.json', JSON.stringify(config), { mode: 0o600 });
     process.exit(0);
 }
-assert(['initial', 'restored', 'stopped'].includes(phase));
 const config = JSON.parse(await read('fixture.json'));
+if (phase === 'seed-unsafe-state') {
+    // Run only while this disposable Agent container is stopped. This emulates an old saved
+    // configuration; the next real bootstrap must refuse to restore its unverified endpoint.
+    const path = '/test/state/anytls/runtime.json';
+    const state = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(state.desired, null);
+    state.desired = structuredClone(config);
+    state.desired.listeners[0].camouflage.serverName = 'unverified.invalid';
+    await writeFile(path, JSON.stringify(state), { mode: 0o600 });
+    process.exit(0);
+}
+assert(['initial', 'restored', 'stopped', 'unsafe-restored'].includes(phase));
 const ca = await read('certs/ca.crt');
 const cert = await read('certs/client.crt');
 const key = await read('certs/client.key');
@@ -60,16 +74,16 @@ const b64 = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const unsigned = `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64({ sub: 'anytls-api-smoke', exp: Math.floor(Date.now() / 1000) + 900 })}`;
 const jwt = `${unsigned}.${sign('RSA-SHA256', Buffer.from(unsigned), await read('certs/jwt.key')).toString('base64url')}`;
 
-async function api(path, body, auth = 'valid') {
+async function api(path, body, auth = 'valid', scope = 'anytls') {
     return new Promise((resolve, reject) => {
         const req = request(
             {
                 hostname: '127.0.0.1',
                 port: 28443,
-                path: `/node/anytls/${path}`,
+                path: `/node/${scope}/${path}`,
                 method: body === undefined ? 'GET' : 'POST',
                 ca,
-                timeout: 15000,
+                timeout: body === undefined ? 5000 : 45000,
                 ...(auth === 'no-mtls' ? {} : { cert, key }),
                 headers: {
                     'Content-Type': 'application/json',
@@ -107,7 +121,8 @@ async function status() {
 }
 async function ready() {
     let lastError;
-    for (let attempt = 0; attempt < 90; attempt++) {
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
         const result = await status().catch((error) => {
             lastError = error;
             return null;
@@ -134,6 +149,27 @@ async function assertPorts(expected) {
         assert.equal(await portOpen(port), expected, `Unexpected listener state on ${port}`);
 }
 
+async function rejectedConfigurationPreservesRuntime(running) {
+    for (const change of [
+        { address: '104.16.0.1' },
+        { address: '2606:4700::1' },
+        { serverName: 'www.cloudflare.com' },
+        { address: '127.0.0.1' },
+        { serverName: 'unverified.invalid' },
+    ]) {
+        const invalid = structuredClone(config);
+        Object.assign(invalid.listeners[0].camouflage, change);
+        assert.equal((await api('start', invalid)).status, 400);
+        const observed = await status();
+        assert.equal(observed.isStarted, running);
+        assert.equal(observed.desiredListeners, running ? 2 : 0);
+        await assertPorts(running);
+    }
+    process.stdout.write(
+        `PASS: CF IPv4/IPv6/hostname, private IP and failed live DNS rejected (${running ? 'existing listeners preserved' : 'no listeners created'})\n`,
+    );
+}
+
 const initial = await ready();
 if (phase === 'initial') {
     assert.equal(initial.isStarted, false);
@@ -153,6 +189,42 @@ if (phase === 'initial') {
     process.stdout.write(
         'PASS: mTLS/JWT reject unauthorized API access without starting listeners\n',
     );
+    await rejectedConfigurationPreservesRuntime(false);
+    for (const [target, serverName, expected] of [
+        ['104.16.0.1:443', 'www.cloudflare.com', /Cloudflare CDN/],
+        ['lax1.vultrobjects.com:443', 'unverified.invalid', /configuration was not accepted/],
+    ]) {
+        const rejected = await api(
+            'start',
+            {
+                internals: { forceRestart: true, hashes: { emptyConfig: 'fixture', inbounds: [] } },
+                xrayConfig: {
+                    inbounds: [
+                        {
+                            tag: 'CAMOUFLAGE_REJECTION_TEST',
+                            protocol: 'vless',
+                            port: 14100,
+                            listen: '127.0.0.1',
+                            streamSettings: {
+                                security: 'reality',
+                                realitySettings: { target, serverNames: [serverName] },
+                            },
+                        },
+                    ],
+                },
+            },
+            'valid',
+            'xray',
+        );
+        // Existing Xray API reports a failed start inside its normal response contract.
+        assert.equal(rejected.status, 201);
+        assert.equal(rejected.body.response.isStarted, false);
+        assert.match(rejected.body.response.error, expected);
+        assert.equal(await portOpen(14100), false);
+    }
+    process.stdout.write(
+        'PASS: complete Xray API rejects Cloudflare and unverified REALITY before core startup\n',
+    );
     const started = await api('start', config);
     assert.equal(started.status, 201);
     assert.equal(started.body.response.operation, 'STARTED');
@@ -160,6 +232,7 @@ if (phase === 'initial') {
     await assertPorts(true);
     assert.equal((await status()).desiredListeners, 2);
     assert.equal((await api('start', config)).body.response.operation, 'UNCHANGED');
+    await rejectedConfigurationPreservesRuntime(true);
     const bad = structuredClone(config);
     bad.listeners[1].camouflage.serverName = bad.listeners[0].camouflage.serverName;
     assert.equal((await api('start', bad)).status, 400);
@@ -183,11 +256,22 @@ if (phase === 'initial') {
     process.stdout.write(
         'PASS: full Agent restart restores desired listeners; explicit API stop closes all private ports\n',
     );
-} else {
+} else if (phase === 'stopped') {
     assert.equal(initial.isStarted, false);
     assert.equal(initial.desiredListeners, 0);
     await assertPorts(false);
     process.stdout.write(
         'PASS: a second full Agent restart cannot revive explicitly stopped listeners\n',
+    );
+} else {
+    assert.equal(initial.available, true);
+    assert.equal(initial.isStarted, false);
+    assert.equal(initial.desiredListeners, 2);
+    assert.equal(initial.error, 'Saved AnyTLS configuration could not be restored safely.');
+    await assertPorts(false);
+    assert.equal((await api('stop', {})).body.response.isStopped, true);
+    assert.equal((await status()).desiredListeners, 0);
+    process.stdout.write(
+        'PASS: unsafe saved camouflage fails closed on real bootstrap while authenticated management remains available\n',
     );
 }

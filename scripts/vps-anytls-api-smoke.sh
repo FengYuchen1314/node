@@ -20,7 +20,7 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out certs/jwt.key 
 openssl pkey -in certs/jwt.key -pubout -out certs/jwt.pub >/dev/null 2>&1
 bash ./anytls-test-certificates.sh "$task_dir/inner-certs"
 docker image inspect "$image" >/dev/null 2>&1 || docker pull "$image"
-docker run --rm --network none --entrypoint node -v "$task_dir:/test" "$image" /test/vps-anytls-api-smoke.mjs setup
+docker run --rm --entrypoint node -v "$task_dir:/test" "$image" /test/vps-anytls-api-smoke.mjs setup
 container="rw-anytls-api-$(basename -- "$task_dir")"
 if docker container inspect "$container" >/dev/null 2>&1; then
     echo 'Refusing to replace an existing container.' >&2
@@ -35,4 +35,8 @@ docker restart --timeout 30 "$container" >/dev/null
 docker exec "$container" node /test/vps-anytls-api-smoke.mjs restored
 docker restart --timeout 30 "$container" >/dev/null
 docker exec "$container" node /test/vps-anytls-api-smoke.mjs stopped
+docker stop --timeout 30 "$container" >/dev/null
+docker run --rm --network none --entrypoint node -v "$task_dir:/test" "$image" /test/vps-anytls-api-smoke.mjs seed-unsafe-state
+docker start "$container" >/dev/null
+docker exec "$container" node /test/vps-anytls-api-smoke.mjs unsafe-restored
 echo 'PASS: complete Agent AnyTLS API image acceptance (no protocol traffic claim)'

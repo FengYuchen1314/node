@@ -14,6 +14,7 @@ import { createServer as createTlsServer } from 'node:tls';
 import { TypedConfigService } from '@common/config/app-config';
 import { TAnyTlsConfig } from '@libs/contracts/models';
 
+import { CamouflageRuntimePolicy } from '../camouflage-domain/camouflage-runtime-policy.service';
 import { AnyTlsConfigRenderer, AnyTlsRenderOptions, validateAnyTlsConfig } from './anytls-config';
 import { AnyTlsRuntimeIO } from './anytls-runtime.io';
 import { AnyTlsRuntimeService } from './anytls-runtime.service';
@@ -141,7 +142,17 @@ test(
             const renderer = new FixtureRenderer();
             const io = new AnyTlsRuntimeIO(env, renderer, new AnyTlsStatsClient());
             const store = new AnyTlsRuntimeStore(env);
-            const runtime = new AnyTlsRuntimeService(env, io, store);
+            // Only this in-process fixture substitutes network policy. Production has no flag that
+            // permits private/unverified camouflage, and the full-image API smoke uses live domains.
+            const policy = {
+                assertAnyTls: async (candidate: TAnyTlsConfig) => {
+                    for (const listener of candidate.listeners) {
+                        assert.equal(listener.camouflage.address, '127.0.0.1');
+                        assert.equal(listener.camouflage.port, camouflagePort);
+                    }
+                },
+            } as unknown as CamouflageRuntimePolicy;
+            const runtime = new AnyTlsRuntimeService(env, io, store, policy);
             services.push(runtime);
             return { runtime, io, store };
         };
