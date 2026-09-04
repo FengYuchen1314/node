@@ -118,3 +118,25 @@ jobs:
 
       - name: Test shared-443 edge against HAProxy and Caddy
         run: RW_EDGE_INTEGRATION=1 npx tsx --test src/modules/edge/edge.linux.test.ts
+
+      - name: Verify AnyTLS ShadowTLS confidentiality with native Mihomo
+        env:
+          RW_ANYTLS_EXPORT_DIR: ${{ runner.temp }}/anytls-security-proof
+        run: bash scripts/test-anytls-security.sh
+
+      - name: Package portable AnyTLS security proof (no private keys)
+        shell: bash
+        run: |
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/anytls-security-proof/SOURCE_COMMIT"
+          tar -czf anytls-security-proof.tar.gz -C "$RUNNER_TEMP/anytls-security-proof" .
+          sha256sum anytls-security-proof.tar.gz > anytls-security-proof.tar.gz.sha256
+
+      - name: Upload portable AnyTLS security proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: anytls-security-proof-${{ github.sha }}
+          path: |
+            anytls-security-proof.tar.gz
+            anytls-security-proof.tar.gz.sha256
+          retention-days: 7
+          if-no-files-found: error
