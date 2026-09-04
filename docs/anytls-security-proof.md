@@ -1,9 +1,9 @@
 # AnyTLS + ShadowTLS: native Mihomo security and accounting proof
 
-This is a test harness, **not a managed protocol implementation**. No creation option, Agent
-runtime service or production subscription is enabled by these changes. The required client is
-Clash Verge / Mihomo; sing-box is used only as an alternative **inner server** with cumulative
-per-user accounting.
+The security harness is now accompanied by an **opt-in Agent runtime module**. Managed creation,
+production subscriptions and shared-443 integration are still not connected; the feature remains
+disabled by default. The required client is Clash Verge / Mihomo; sing-box is used only as an
+**inner server** with cumulative per-user accounting, not as a required client.
 
 The inline upstream AnyTLS + ShadowTLS path replaces normal TLS and does not encrypt application
 payloads. The harness includes a deliberately insecure **positive control**, available only on
@@ -30,7 +30,7 @@ This adds an AnyTLS layer and has not been performance-benchmarked.
 v1.19.30 archive SHA-256, generates fresh private test certificates and checks every generated
 configuration with the native core before sending traffic. The first variant uses two Mihomo
 server processes. The second uses an inner sing-box server compiled in Actions from unchanged
-source commit `0b8995879f29a9b98ee027bc17b75e101445b238`, with `with_v2ray_api` enabled.
+source commit `0b8995879f29a9b98ee027bc17b75e101445b238`, with `with_v2ray_api` and `with_clash_api` enabled.
 The normal upstream sing-box release binary omits that accounting API and fails configuration
 validation; it must not silently fall back to polling active connections.
 
@@ -43,7 +43,10 @@ Sources:
 The Actions artifact contains only scripts, binaries, source/build metadata and a checksum. It
 does **not** include generated passwords, certificates or private keys. Download and verify the
 archive locally and again on the VPS, then extract it into a new, private direct child of `/opt`
-named `xboard-anytls-test.*`. Run `bash ./vps-anytls-security.sh /opt/xboard-anytls-test.<suffix>`.
+named `xboard-anytls-test.*`. Extract as root with `tar --no-same-owner`; the private directory and
+files must be root-owned because the test container drops DAC-override capabilities. The current
+packager normalizes tar ownership to numeric root as well. Run
+`bash ./vps-anytls-security.sh /opt/xboard-anytls-test.<suffix>`.
 The script generates fresh two-day fixture certificates; all user credentials are generated in
 memory inside the test container. No compilation takes place on the VPS.
 
@@ -67,21 +70,58 @@ never copy its generated certificates into a deployment or publish it as an arti
 - Replacing the inner process without a removed user's credentials rejects new connections from
   that user while remaining users still connect.
 
-The test-only statistics decoder speaks the upstream v2ray StatsService protocol using Node's
-HTTP/2 implementation; it does not replace the production Xray SDK. A production adapter must
-account for the service-name difference (`v2ray.core.app.stats.command.StatsService` versus Xray),
-counter resets/epochs, unbilled deltas before shutdown and simultaneous Xray/AnyTLS aggregation.
+The proof-only statistics decoder speaks the upstream v2ray StatsService protocol using Node's
+HTTP/2 implementation. The new Agent adapter reuses the existing SDK's protobuf definitions with
+the correct service name (`v2ray.core.app.stats.command.StatsService` rather than Xray's name).
+Neither replaces the existing Xray adapter. Simultaneous Xray/AnyTLS billing is not yet wired.
+
+## Opt-in managed Agent runtime
+
+`src/modules/anytls` is registered in the existing Node module with `ANYTLS_ENABLED=false` by
+default. Its JWT-protected API exposes start, stop, status and per-user statistics under
+`/node/anytls`. No backend-managed start request or normal billing poll calls this API yet.
+
+- Strict listener/config schemas reject duplicate SNI/ports, overlapping control ports, shared
+  transport/subscriber secrets and unsupported fields. Certificate chain, expiry, hostname and
+  private-key matching are validated before live mutation. Mapped IPv6 cannot disguise a local
+  handshake loop. Both generated configs also pass native core validation before a reload.
+- Separate supervised inner/outer processes retain verified inner TLS. Wrapper-only traffic is
+  restricted to its exact inner TCP listener. Authenticated inner users cannot reach private
+  egress addresses or local control/statistics services. Native tests allow only one additional
+  owned HTTP fixture through a test-only renderer, never an API setting.
+- Serialized updates persist explicit stop intent before mutation, drain connections, retain
+  final counters and attempt rollback. An unconfirmed rollback is an error. Graceful Agent
+  restart restores committed listeners; explicit stop cannot revive them.
+- Cumulative statistics are never reset at the core by the production adapter. Durable decimal
+  totals, per-generation snapshots and consumer baselines prevent duplicate billing after
+  graceful restarts and concurrent consumption. Failed persistence does not consume a baseline;
+  final counters stay pending for retry. This is not end-to-end exactly-once delivery to a panel.
+- The Linux supervisor shuts down its exact core on Agent pipe EOF and uses kernel parent-death
+  signaling if the supervisor is killed. Duplicate shutdown hooks are idempotent. A PID read from
+  disk is never a target for process termination.
+- Inactive configuration directories created by the current IO instance are cleaned after
+  reload, rejection, stop and release. An active generation is retained. Unowned paths, even
+  generation-shaped ones, and symlinks are not recursively removed. Cleanup failures are logged
+  without credentials and retried on release, without losing the final accounting snapshot.
+
+Runtime state belongs in a private persistent directory. A hard crash can lose the last
+uncheckpointed traffic (normally up to the five-second checkpoint interval, more during storage
+failure); it must not be described as crash-lossless accounting. Files left by a crashed older
+owner are intentionally not adopted by the in-memory generation collector. Certificate renewal,
+safe stale-state maintenance and end-to-end delivery acknowledgements need further integration.
 
 ## Not yet established
 
-Production certificate lifecycle, user/session reconciliation, active-session revocation under a
-managed reload, persistent accounting across Agent/process crashes, shared-443 routing, panel-only
-artifact delivery, generated subscriptions/topology dependency preservation and browser/API
-acceptance remain outstanding. These tests use one isolated VPS container, not multiple physical
+Production certificate lifecycle, panel-driven user/session reconciliation, mixed Xray billing,
+crash-lossless accounting, shared-443 routing, panel-only artifact delivery, generated
+subscriptions/topology dependency preservation and browser/full API acceptance remain outstanding.
+Managed revocation, rollback and graceful-restart accounting now have native tests, but those
+instantiate the runtime rather than calling the complete HTTPS/JWT Node API. These tests use one
+isolated VPS container, not multiple physical
 servers. They do not establish mainland reachability, resistance to GFW interference or a speed
 advantage. The user has no mainland probe endpoint.
 
-## Verified checkpoint
+## Historical security-only checkpoint
 
 Node commit `5f32667aa5f1d1ae4d7fa07a1dc613c545dd2825` passed
 [CI](https://github.com/FengYuchen1314/node/actions/runs/33922409927) and its separate
@@ -96,3 +136,23 @@ All 16 accounting-server variant tests passed there without skips. The private f
 is `/opt/xboard-anytls-test.vEeHlL09`; the disposable container was removed. This used the pinned
 backend image only as a Node.js runtime, with the verified cores/scripts mounted read-only from
 the Actions artifact. The PDF services and existing host ports were not modified.
+
+## Managed runtime checkpoint
+
+Node `b027eb956b4c4d9a08b57e4960f2946b4467cb1f` passed
+[CI](https://github.com/FengYuchen1314/node/actions/runs/33924956212), including both source and
+Actions-compiled managed-runtime tests. The archive checksum, verified locally and again on
+185.99.135.224, is `dadc319d42c1336cf8e87cd5b009bfcb5a318a24e275c9d2111599e353b4ae90`.
+All **24** tests passed on the VPS (16 security/accounting proof tests plus 8 managed lifecycle
+tests, including parents), with no skips. Fixture directory: `/opt/xboard-anytls-test.AmVTMJLu`.
+
+The first launch found an artifact ownership problem: tar had preserved Actions UID 1001, so
+root inside the capability-dropped container could not read the private files. Ownership was
+corrected only within the newly created test directory before rerunning. The packager now
+normalizes ownership. The successful run used the previously published Node image as the
+Node.js/dependency runtime, with new compiled test code and native cores mounted read-only from
+Actions. It does not establish acceptance of the new complete AnyTLS Node image. The disposable
+container was removed, both PDF containers remained healthy, and HTTP 38100 returned 200.
+
+Generation cleanup and its regression tests were added after this checkpoint; their final CI/VPS
+results must be recorded separately rather than attributed to the b027eb9 run.

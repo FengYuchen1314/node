@@ -69,12 +69,12 @@ export async function privateJson(path: string, value: unknown): Promise<void> {
     const temporary = join(directory, `.write-${randomUUID()}.tmp`);
     const file = await open(temporary, 'wx', 0o600);
     try {
-        await file.writeFile(payload);
-        await file.sync();
-    } finally {
-        await file.close();
-    }
-    try {
+        try {
+            await file.writeFile(payload);
+            await file.sync();
+        } finally {
+            await file.close();
+        }
         await rename(temporary, path);
         if (process.platform !== 'win32') {
             const parent = await open(directory, 'r');

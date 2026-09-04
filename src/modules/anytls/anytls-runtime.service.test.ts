@@ -1,17 +1,22 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { TypedConfigService } from '@common/config/app-config';
 import { AnyTlsConfigSchema, TAnyTlsConfig } from '@libs/contracts/models';
 
+import { AnyTlsConfigRenderer } from './anytls-config';
 import { AnyTlsRuntimeIO, PreparedAnyTls } from './anytls-runtime.io';
 import { AnyTlsRuntimeService, AnyTlsUpdateError, difference } from './anytls-runtime.service';
 import {
     AnyTlsRuntimeState,
     AnyTlsRuntimeStateSchema,
     AnyTlsRuntimeStore,
+    privateJson,
 } from './anytls-runtime.store';
-import { AnyTlsCounters } from './anytls-stats.client';
+import { AnyTlsCounters, AnyTlsStatsClient } from './anytls-stats.client';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const desired = (port = 14001): TAnyTlsConfig => ({
@@ -41,6 +46,7 @@ class FakeIO {
     running = false;
     owner = false;
     preparedCount = 0;
+    discardedCount = 0;
     starts = 0;
     stops = 0;
     failStart = 0;
@@ -64,6 +70,9 @@ class FakeIO {
         this.running = true;
         this.counters = {};
         this.starts++;
+    }
+    async discard(_value: PreparedAnyTls) {
+        this.discardedCount++;
     }
     isRunning() {
         return this.running;
@@ -277,4 +286,70 @@ test('duplicate shutdown hooks cannot overwrite a newer owner state', async () =
     await first.onModuleDestroy();
     assert.equal(io.saved.desired, null);
     await next.onModuleDestroy();
+});
+
+test('failed stop-intent persistence discards the unused preparation without stopping live traffic', async () => {
+    const io = new FakeIO();
+    const runtime = service(io);
+    await runtime.apply(desired());
+    const discarded = io.discardedCount;
+    io.failWrite = (state) => state.desired === null;
+    await assert.rejects(runtime.apply(desired(14002)), /disk failure/);
+    assert.equal(io.running, true);
+    assert.equal(io.starts, 1);
+    assert.equal(io.stops, 0);
+    assert.equal(io.discardedCount, discarded + 1);
+    io.failWrite = undefined;
+    await runtime.onModuleDestroy();
+});
+
+test('failed native preparation removes only its own generated configuration directory', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'rw-anytls-cleanup-'));
+    const values = {
+        ANYTLS_STATE_DIR: directory,
+        ANYTLS_MIHOMO_PATH: join(directory, 'missing-core'),
+        ANYTLS_SINGBOX_PATH: join(directory, 'missing-inner'),
+        ANYTLS_SUPERVISOR_PATH: join(directory, 'missing-supervisor'),
+        ANYTLS_STATS_PORT: 15999,
+        ANYTLS_CONTROL_PORT: 15998,
+        NODE_PORT: 2222,
+    };
+    const env = {
+        getOrThrow: (key: keyof typeof values) => values[key],
+    } as unknown as TypedConfigService;
+    const renderer = {
+        render: () => ({ config: desired(), outer: { secret: 'fixture' }, inner: {} }),
+    } as unknown as AnyTlsConfigRenderer;
+    const io = new AnyTlsRuntimeIO(env, renderer, new AnyTlsStatsClient());
+    const untouched = join(directory, 'generation-11111111-1111-4111-8111-111111111111');
+    try {
+        await io.acquire();
+        await privateJson(join(untouched, 'keep.json'), { userOwned: true });
+        for (let attempt = 0; attempt < 3; attempt++)
+            await assert.rejects(io.prepare(desired()), /Native AnyTLS/);
+        // Even a generation-shaped path is not ours unless this process created it exclusively.
+        await io.discard({ directory: untouched } as PreparedAnyTls);
+        assert.deepEqual((await readdir(directory)).sort(), [
+            'generation-11111111-1111-4111-8111-111111111111',
+            'owner.pid',
+        ]);
+        assert.deepEqual(JSON.parse(await readFile(join(untouched, 'keep.json'), 'utf8')), {
+            userOwned: true,
+        });
+    } finally {
+        await io.release();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test('shutdown releases a lease even when the state could not be loaded', async () => {
+    const io = new FakeIO();
+    io.load = async () => {
+        throw new Error('invalid state');
+    };
+    const runtime = service(io);
+    await assert.rejects(runtime.onModuleInit(), /invalid state/);
+    assert.equal(io.owner, true);
+    await runtime.onModuleDestroy();
+    assert.equal(io.owner, false);
 });

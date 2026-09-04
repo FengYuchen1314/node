@@ -128,7 +128,7 @@ jobs:
         shell: bash
         run: |
           printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/anytls-security-proof/SOURCE_COMMIT"
-          tar -czf anytls-security-proof.tar.gz -C "$RUNNER_TEMP/anytls-security-proof" .
+          tar --owner=0 --group=0 --numeric-owner -czf anytls-security-proof.tar.gz -C "$RUNNER_TEMP/anytls-security-proof" .
           sha256sum anytls-security-proof.tar.gz > anytls-security-proof.tar.gz.sha256
 
       - name: Upload portable AnyTLS security proof

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, ChildProcess } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { createServer as createHttpServer } from 'node:http';
 import { connect, createServer, Socket } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -224,6 +224,10 @@ test(
         });
         const first = makeRuntime();
         await first.runtime.onModuleInit();
+        const generations = async () =>
+            (await readdir(values.ANYTLS_STATE_DIR)).filter((name) =>
+                name.startsWith('generation-'),
+            );
         await t.test(
             'native config rejects wrong TLS identity, loops and control port overlap before starting',
             async () => {
@@ -260,6 +264,10 @@ test(
             'two managed listeners accept only their authorized users and aggregate a shared user',
             async () => {
                 assert.equal((await first.runtime.apply(config)).isStarted, true);
+                const activeFiles = await generations();
+                assert.equal(activeFiles.length, 1);
+                assert.equal((await first.runtime.apply(config)).operation, 'UNCHANGED');
+                assert.deepEqual(await generations(), activeFiles);
                 assert((await client(0, 'a'.repeat(48))).includes(responseBody));
                 assert((await client(1, 'b'.repeat(48))).includes(responseBody));
                 await assert.rejects(client(0, 'b'.repeat(48)));
@@ -301,6 +309,7 @@ test(
                 }
                 assert((await client(0, 'a'.repeat(48))).includes(responseBody));
                 await first.runtime.users(true);
+                assert.equal((await generations()).length, 1);
             },
         );
         await t.test(
@@ -310,6 +319,7 @@ test(
                 reduced.listeners = [reduced.listeners[0]];
                 reduced.listeners[0].users = [{ name: 'shared', password: 's'.repeat(48) }];
                 await first.runtime.apply(reduced);
+                assert.equal((await generations()).length, 1);
                 await assert.rejects(client(0, 'a'.repeat(48)));
                 await assert.rejects(client(1, 'b'.repeat(48)));
                 assert((await client(0, 's'.repeat(48))).includes(responseBody));
@@ -321,6 +331,7 @@ test(
             'Agent restart restores desired state without replaying billed traffic; explicit stop stays stopped',
             async () => {
                 await first.runtime.onModuleDestroy();
+                assert.deepEqual(await generations(), []);
                 const second = makeRuntime();
                 await second.runtime.onModuleInit();
                 assert.equal((await second.runtime.status()).isStarted, true);
@@ -328,6 +339,7 @@ test(
                 assert((await client(0, 's'.repeat(48))).includes(responseBody));
                 assert((await second.runtime.users(true)).some((user) => user.downlink > 0));
                 await second.runtime.stop();
+                assert.deepEqual(await generations(), []);
                 await second.runtime.onModuleDestroy();
                 const third = makeRuntime();
                 await third.runtime.onModuleInit();

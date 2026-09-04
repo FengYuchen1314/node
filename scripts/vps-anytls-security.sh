@@ -5,6 +5,7 @@ umask 077
 test_dir="$(realpath -- "${1:?Pass a private /opt/xboard-anytls-test.* directory}")"
 [[ "$test_dir" == /opt/xboard-anytls-test.* && "$(dirname -- "$test_dir")" == /opt ]]
 [[ -f "$test_dir/SOURCE_COMMIT" && -x "$test_dir/mihomo" && -x "$test_dir/sing-box" ]]
+[[ -x "$test_dir/rw-core-supervisor" && -f "$test_dir/anytls-runtime.test.cjs" ]]
 read -r source_commit < "$test_dir/SOURCE_COMMIT"
 [[ "$source_commit" =~ ^[a-f0-9]{40}$ ]]
 mkdir -m 700 "$test_dir/certs"

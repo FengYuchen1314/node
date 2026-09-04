@@ -64,9 +64,9 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
         this.stopped = true;
         clearInterval(this.timer);
         this.shutdown = this.lock(async () => {
-            if (!this.state) return;
-            const desired = this.state.desired;
             try {
+                if (!this.state) return;
+                const desired = this.state.desired;
                 await this.retire();
                 await this.persist({ ...this.state, desired, seen: {} });
             } finally {
@@ -155,7 +155,12 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
             return { isStarted: true, operation: 'UNCHANGED' };
         }
         const prepared = await this.io.prepare(config);
-        await this.persist({ ...state, desired: null });
+        try {
+            await this.persist({ ...state, desired: null });
+        } catch (error) {
+            await this.io.discard(prepared);
+            throw error;
+        }
         try {
             await this.retire();
             await this.persist({ ...this.state!, seen: {} });
@@ -168,8 +173,14 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
             try {
                 await this.retire();
                 await this.persist({ ...this.state!, desired: null, seen: {} });
-                if (previous?.listeners.length)
-                    await this.io.start(await this.io.prepare(previous));
+                if (previous?.listeners.length) {
+                    const rollback = await this.io.prepare(previous);
+                    try {
+                        await this.io.start(rollback);
+                    } finally {
+                        await this.io.discard(rollback);
+                    }
+                }
                 await this.persist({ ...this.state!, desired: previous });
                 restored = true;
             } catch {
@@ -180,6 +191,8 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
             }
             this.lastError = new AnyTlsUpdateError(restored).message;
             throw new AnyTlsUpdateError(restored);
+        } finally {
+            await this.io.discard(prepared);
         }
     }
 

@@ -1,12 +1,12 @@
 import { ChildProcess, execFile, spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, unlink } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, realpath, rm, unlink } from 'node:fs/promises';
 import { createServer, connect } from 'node:net';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '@common/config/app-config';
 import { TAnyTlsConfig } from '@libs/contracts/models';
@@ -29,7 +29,9 @@ const execFileAsync = promisify(execFile);
 
 @Injectable()
 export class AnyTlsRuntimeIO {
+    private readonly logger = new Logger(AnyTlsRuntimeIO.name);
     private children = new Map<string, Child>();
+    private readonly generations = new Set<string>();
     private prepared: PreparedAnyTls | undefined;
     private readonly stateDir: string;
     private readonly supervisor: string;
@@ -91,6 +93,7 @@ export class AnyTlsRuntimeIO {
 
     async release(): Promise<void> {
         if (this.hasChildren()) throw new Error('Cannot release a live AnyTLS runtime.');
+        for (const directory of this.generations) await this.removeGeneration(directory);
         if (this.leaseOwned) {
             await unlink(join(this.stateDir, 'owner.pid'));
             this.leaseOwned = false;
@@ -114,9 +117,13 @@ export class AnyTlsRuntimeIO {
         const options = this.options();
         const rendered = this.renderer.render(input, options);
         const directory = join(this.stateDir, `generation-${randomUUID()}`);
-        await privateJson(join(directory, 'outer.json'), rendered.outer);
-        await privateJson(join(directory, 'inner.json'), rendered.inner);
+        // Only collect directories this process created exclusively. Never adopt/delete an
+        // arbitrary path supplied through a request, a stale PID record or a symlink.
+        await mkdir(directory, { mode: 0o700 });
+        this.generations.add(directory);
         try {
+            await privateJson(join(directory, 'outer.json'), rendered.outer);
+            await privateJson(join(directory, 'inner.json'), rendered.inner);
             await execFileAsync(
                 this.outer,
                 ['-t', '-d', directory, '-f', join(directory, 'outer.json')],
@@ -128,9 +135,41 @@ export class AnyTlsRuntimeIO {
                 { timeout: 15000, maxBuffer: 256 * 1024, windowsHide: true },
             );
         } catch {
+            await this.removeGeneration(directory);
             throw new Error('Native AnyTLS configuration validation failed.');
         }
         return { config: rendered.config, directory, options };
+    }
+
+    async discard(prepared: PreparedAnyTls): Promise<void> {
+        if (this.prepared?.directory === prepared.directory && this.hasChildren()) return;
+        await this.removeGeneration(prepared.directory);
+    }
+
+    private async removeGeneration(directory: string): Promise<void> {
+        if (!this.generations.has(directory)) return;
+        try {
+            const root = resolve(this.stateDir);
+            const target = resolve(directory);
+            if (
+                dirname(target) !== root ||
+                !/^generation-[a-f0-9-]{36}$/.test(basename(target)) ||
+                (await realpath(root)) !== root
+            )
+                throw new Error('Unsafe AnyTLS generation path.');
+            const info = await lstat(target);
+            if (!info.isDirectory() || info.isSymbolicLink())
+                throw new Error('Unsafe AnyTLS generation directory.');
+            await rm(target, { recursive: true });
+            this.generations.delete(directory);
+        } catch (error) {
+            if (hasCode(error, 'ENOENT')) this.generations.delete(directory);
+            else {
+                // Cleanup must not discard the already collected final accounting snapshot.
+                // Keep ownership so a later release can retry; do not log secrets or native output.
+                this.logger.warn('Inactive AnyTLS configuration cleanup failed; retry pending.');
+            }
+        }
     }
 
     async start(prepared: PreparedAnyTls): Promise<void> {
@@ -195,7 +234,9 @@ export class AnyTlsRuntimeIO {
         }
         const counters = await this.stats.read(this.prepared.options.statsPort);
         await this.terminate('inner');
+        const retired = this.prepared;
         this.prepared = undefined;
+        await this.discard(retired);
         return counters;
     }
 
@@ -205,7 +246,9 @@ export class AnyTlsRuntimeIO {
         );
         if (results.some((result) => result.status === 'rejected'))
             throw new Error('AnyTLS processes could not be stopped.');
+        const retired = this.prepared;
         this.prepared = undefined;
+        if (retired) await this.discard(retired);
     }
 
     private async control(method: 'GET' | 'DELETE'): Promise<unknown[]> {
