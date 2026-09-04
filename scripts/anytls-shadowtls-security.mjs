@@ -13,8 +13,11 @@ import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer as createTlsServer } from 'node:tls';
 
+import { queryUserCounters } from './anytls-test-stats.mjs';
+
 const binary = process.env.RW_MIHOMO_BINARY;
 const certDir = process.env.RW_ANYTLS_CERT_DIR;
+const innerBinary = process.env.RW_ANYTLS_INNER_BINARY;
 assert(binary && certDir, 'Provide RW_MIHOMO_BINARY and fresh RW_ANYTLS_CERT_DIR fixtures');
 assert.equal(process.platform, 'linux');
 const baseConfig = {
@@ -106,7 +109,7 @@ async function request(socksPort, destinationPort, marker, host = '127.0.0.1') {
 }
 
 test(
-    'Mihomo AnyTLS / ShadowTLS confidentiality and fail-closed proof',
+    `Mihomo client AnyTLS / ShadowTLS security proof (inner server: ${innerBinary ? 'sing-box' : 'Mihomo'})`,
     { timeout: 180000 },
     async (t) => {
         const taskDir = await mkdtemp(join(tmpdir(), 'rw-anytls-security-'));
@@ -143,23 +146,32 @@ test(
             clearTimeout(timer);
             processes.delete(child);
         }
-        async function start(name, config, ports) {
+        async function start(name, config, ports, singbox = false) {
             const dir = join(taskDir, name);
             await mkdir(dir, { mode: 0o700 });
             const path = join(dir, 'config.json');
             await writeFile(path, JSON.stringify(config), { mode: 0o600 });
-            const checked = spawnSync(binary, ['-t', '-d', dir, '-f', path], {
-                encoding: 'utf8',
-                timeout: 15000,
-            });
+            const core = singbox ? innerBinary : binary;
+            const checked = spawnSync(
+                core,
+                singbox ? ['check', '-D', dir, '-c', path] : ['-t', '-d', dir, '-f', path],
+                {
+                    encoding: 'utf8',
+                    timeout: 15000,
+                },
+            );
             assert.equal(
                 checked.status,
                 0,
                 `${name} native configuration check failed: ${checked.stderr}${checked.stdout}`,
             );
-            const child = spawn(binary, ['-d', dir, '-f', path], {
-                stdio: ['ignore', 'pipe', 'pipe'],
-            });
+            const child = spawn(
+                core,
+                singbox ? ['run', '-D', dir, '-c', path] : ['-d', dir, '-f', path],
+                {
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                },
+            );
             processes.add(child);
             child.on('exit', () => processes.delete(child));
             let output = '';
@@ -234,7 +246,9 @@ test(
             const controlPort = await reservePort();
             const outerPassword = randomBytes(24).toString('hex');
             const innerPassword = randomBytes(24).toString('hex');
+            const secondPassword = randomBytes(24).toString('hex');
             const shadowPassword = randomBytes(24).toString('hex');
+            const statsPort = await reservePort();
             const shadowListener = (name, port, rule) => ({
                 name,
                 type: 'anytls',
@@ -255,27 +269,71 @@ test(
                 `AND,((NETWORK,TCP),(IP-CIDR,127.0.0.1/32),(DST-PORT,${port})),DIRECT`;
             // Separate logical runtimes: the inner egress is not an accidental loop back into
             // the outer process. Do not disable Mihomo's loopback protection to make this pass.
-            await start(
-                'inner-server',
-                {
-                    ...baseConfig,
-                    listeners: [
-                        {
-                            name: 'inner',
-                            type: 'anytls',
-                            listen: '127.0.0.1',
-                            port: innerPort,
-                            rule: 'inner-only-fixture',
-                            users: { subscriber: innerPassword },
+            const singboxConfig = (users) => ({
+                log: { level: 'info', timestamp: false },
+                inbounds: [
+                    {
+                        type: 'anytls',
+                        tag: 'inner',
+                        listen: '127.0.0.1',
+                        listen_port: innerPort,
+                        users,
+                        tls: {
+                            enabled: true,
                             certificate: innerCert,
-                            'private-key': innerKey,
+                            key: innerKey,
+                            min_version: '1.3',
                         },
+                    },
+                ],
+                outbounds: [{ type: 'direct', tag: 'egress' }],
+                route: {
+                    rules: [
+                        {
+                            inbound: ['inner'],
+                            network: ['tcp'],
+                            ip_cidr: ['127.0.0.1/32'],
+                            port: [targetPort],
+                            action: 'route',
+                            outbound: 'egress',
+                        },
+                        { action: 'reject' },
                     ],
-                    'sub-rules': {
-                        'inner-only-fixture': [exactTcpTarget(targetPort), 'MATCH,REJECT'],
+                },
+                experimental: {
+                    v2ray_api: {
+                        listen: `127.0.0.1:${statsPort}`,
+                        stats: { enabled: true, users: users.map((user) => user.name) },
                     },
                 },
-                [innerPort],
+            });
+            let innerProcess = await start(
+                'inner-server',
+                innerBinary
+                    ? singboxConfig([
+                          { name: 'subscriber', password: innerPassword },
+                          { name: 'second', password: secondPassword },
+                      ])
+                    : {
+                          ...baseConfig,
+                          listeners: [
+                              {
+                                  name: 'inner',
+                                  type: 'anytls',
+                                  listen: '127.0.0.1',
+                                  port: innerPort,
+                                  rule: 'inner-only-fixture',
+                                  users: { subscriber: innerPassword, second: secondPassword },
+                                  certificate: innerCert,
+                                  'private-key': innerKey,
+                              },
+                          ],
+                          'sub-rules': {
+                              'inner-only-fixture': [exactTcpTarget(targetPort), 'MATCH,REJECT'],
+                          },
+                      },
+                innerBinary ? [innerPort, statsPort] : [innerPort],
+                !!innerBinary,
             );
             await start(
                 'outer-server',
@@ -455,6 +513,73 @@ test(
             await t.test('valid encrypted path still works after rejected attempts', () =>
                 clientCase('encrypted-again'),
             );
+            if (innerBinary) {
+                await t.test(
+                    'closed connections retain cumulative per-user counters without cross-user billing',
+                    async () => {
+                        const before = await queryUserCounters(statsPort);
+                        assert(before['user>>>subscriber>>>traffic>>>uplink'] >= 2 * 512 * 56);
+                        assert(
+                            before['user>>>subscriber>>>traffic>>>downlink'] >=
+                                2 * 512 * responseMarker.length,
+                        );
+                        assert.equal(before['user>>>second>>>traffic>>>uplink'] ?? 0, 0);
+                        assert.deepEqual(
+                            await queryUserCounters(statsPort),
+                            before,
+                            'Idle reads must not consume or replay counters',
+                        );
+                        await clientCase('second-user', { inner: { password: secondPassword } });
+                        const after = await queryUserCounters(statsPort);
+                        assert.equal(
+                            after['user>>>subscriber>>>traffic>>>uplink'],
+                            before['user>>>subscriber>>>traffic>>>uplink'],
+                        );
+                        assert.equal(
+                            after['user>>>subscriber>>>traffic>>>downlink'],
+                            before['user>>>subscriber>>>traffic>>>downlink'],
+                        );
+                        assert(
+                            after['user>>>second>>>traffic>>>uplink'] > 0 &&
+                                after['user>>>second>>>traffic>>>downlink'] > 0,
+                        );
+                    },
+                );
+                await t.test(
+                    'atomic stats reset does not replay already closed connections',
+                    async () => {
+                        const before = await queryUserCounters(statsPort);
+                        assert.deepEqual(await queryUserCounters(statsPort, true), before);
+                        assert(
+                            Object.values(await queryUserCounters(statsPort)).every(
+                                (value) => value === 0,
+                            ),
+                        );
+                        await clientCase('after-stats-reset');
+                        const after = await queryUserCounters(statsPort);
+                        assert(after['user>>>subscriber>>>traffic>>>uplink'] > 0);
+                        assert.equal(after['user>>>second>>>traffic>>>uplink'], 0);
+                        assert.equal(after['user>>>second>>>traffic>>>downlink'], 0);
+                    },
+                );
+                await t.test(
+                    'replacing the inner runtime revokes removed users and keeps remaining users working',
+                    async () => {
+                        await stop(innerProcess);
+                        innerProcess = await start(
+                            'inner-replacement',
+                            singboxConfig([{ name: 'second', password: secondPassword }]),
+                            [innerPort, statsPort],
+                            true,
+                        );
+                        await clientCase('revoked-user', { deny: true });
+                        await clientCase('remaining-user', { inner: { password: secondPassword } });
+                        const stats = await queryUserCounters(statsPort);
+                        assert.equal(stats['user>>>subscriber>>>traffic>>>uplink'] ?? 0, 0);
+                        assert(stats['user>>>second>>>traffic>>>uplink'] > 0);
+                    },
+                );
+            }
         } catch (error) {
             // Runtime logs contain only randomly generated fixture identities, never real subscriber data.
             t.diagnostic(logs.map((get) => get()).join('\n'));
