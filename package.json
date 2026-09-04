@@ -26,7 +26,7 @@
     "format:fix": "oxfmt",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "test": "tsx --test src/modules/internal/internal.service.test.ts src/modules/mieru/mieru-control.client.test.ts src/modules/mieru/mieru-metrics-baseline.store.test.ts src/modules/mieru/mieru-metrics-delta.service.test.ts src/modules/stats/stats.service.test.ts",
+    "test": "tsx --test src/modules/camouflage-domain/camouflage-domain-network.service.test.ts src/modules/camouflage-domain/camouflage-domain.service.test.ts src/modules/camouflage-domain/cloudflare-signals.test.ts src/modules/camouflage-domain/ip-address.test.ts src/modules/internal/internal.service.test.ts src/modules/mieru/mieru-control.client.test.ts src/modules/mieru/mieru-metrics-baseline.store.test.ts src/modules/mieru/mieru-metrics-delta.service.test.ts src/modules/stats/stats.service.test.ts",
     "check": "oxfmt --check && oxlint",
     "fix": "oxfmt && oxlint --fix",
     "typecheck": "tsc --noEmit"

@@ -1,3 +1,4 @@
+export * from './camouflage-domain';
 export * from './handler';
 export * from './mieru';
 export * from './plugin';
