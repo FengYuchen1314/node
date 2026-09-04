@@ -6,7 +6,10 @@ import { Injectable } from '@nestjs/common';
 import { StatsServiceDefinition } from '@remnawave/xtls-sdk/build/src/xray-protos/app/stats/command/command';
 
 export const AnyTlsCounterSchema = z
-    .object({ uplink: z.string().regex(/^\d+$/), downlink: z.string().regex(/^\d+$/) })
+    .object({
+        uplink: z.string().max(40).regex(/^\d+$/),
+        downlink: z.string().max(40).regex(/^\d+$/),
+    })
     .strict();
 export const AnyTlsCountersSchema = z.record(
     z.string().regex(/^(?!__proto__$|constructor$|prototype$)[A-Za-z0-9_.@-]{1,64}$/),

@@ -265,3 +265,16 @@ test('prototype-like usernames and very large lifetime totals do not corrupt acc
         /reset/,
     );
 });
+
+test('duplicate shutdown hooks cannot overwrite a newer owner state', async () => {
+    const io = new FakeIO();
+    const first = service(io);
+    await first.apply(desired());
+    await first.onModuleDestroy();
+    const next = service(io);
+    await next.onModuleInit();
+    await next.stop();
+    await first.onModuleDestroy();
+    assert.equal(io.saved.desired, null);
+    await next.onModuleDestroy();
+});

@@ -242,6 +242,10 @@ test(
                         input.listeners[0].camouflage.port = input.listeners[0].innerPort;
                     },
                     (input: TAnyTlsConfig) => {
+                        input.listeners[0].camouflage.address = '::ffff:7f00:1';
+                        input.listeners[0].camouflage.port = input.listeners[0].innerPort;
+                    },
+                    (input: TAnyTlsConfig) => {
                         input.listeners[0].innerPort = values.ANYTLS_STATS_PORT;
                     },
                 ]) {
@@ -331,6 +335,50 @@ test(
                 assert.equal((await third.store.load()).desired, null);
             },
         );
+    },
+);
+
+test(
+    'supervisor stops its exact core after parent EOF or a supervisor SIGKILL',
+    {
+        skip: process.platform !== 'linux' || process.env.RW_ANYTLS_RUNTIME_INTEGRATION !== '1',
+        timeout: 30000,
+    },
+    async () => {
+        for (const killSupervisor of [false, true]) {
+            const port = await unusedPort();
+            const core = `require('node:net').createServer().listen(${port}, '127.0.0.1')`;
+            const binary = process.env.RW_ANYTLS_SUPERVISOR_BINARY!;
+            const parentCode = `const {spawn}=require('node:child_process'); const child=spawn(${JSON.stringify(binary)}, ['--binary',process.execPath,'--','-e',${JSON.stringify(core)}], {stdio:['pipe','ignore','ignore']}); child.on('exit',()=>process.exit());`;
+            const parent = killSupervisor
+                ? spawn(binary, ['--binary', process.execPath, '--', '-e', core], {
+                      stdio: ['pipe', 'ignore', 'ignore'],
+                  })
+                : spawn(process.execPath, ['-e', parentCode], {
+                      stdio: ['pipe', 'ignore', 'ignore'],
+                  });
+            try {
+                await waitPort(port, parent);
+                const exited = once(parent, 'exit');
+                parent.kill('SIGKILL');
+                await exited;
+                const deadline = Date.now() + 7000;
+                while (true) {
+                    const socket = connect(port, '127.0.0.1');
+                    try {
+                        await once(socket, 'connect');
+                        socket.destroy();
+                    } catch {
+                        socket.destroy();
+                        break;
+                    }
+                    assert(Date.now() < deadline, 'An orphaned core survived its owner');
+                    await delay(50);
+                }
+            } finally {
+                await stopChild(parent);
+            }
+        }
     },
 );
 

@@ -27,6 +27,7 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
     private stopped = false;
     private lastError: string | null = null;
     private pendingFinal: AnyTlsCounters | undefined;
+    private shutdown: Promise<void> | undefined;
 
     constructor(
         private readonly env: TypedConfigService,
@@ -59,9 +60,10 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
     }
 
     async onModuleDestroy(): Promise<void> {
+        if (this.shutdown) return this.shutdown;
         this.stopped = true;
         clearInterval(this.timer);
-        await this.lock(async () => {
+        this.shutdown = this.lock(async () => {
             if (!this.state) return;
             const desired = this.state.desired;
             try {
@@ -72,6 +74,7 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
                 await this.io.release();
             }
         });
+        return this.shutdown;
     }
 
     apply(input: unknown): Promise<{
@@ -133,7 +136,7 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
                 downlink: safeNumber(value.downlink),
             }));
             // A failed durable write must not consume a caller's unbilled delta.
-            if (reset)
+            if (reset && users.some((value) => value.uplink !== 0 || value.downlink !== 0))
                 await this.persist({ ...this.state!, billed: structuredClone(this.state!.totals) });
             return users.filter((value) => value.uplink !== 0 || value.downlink !== 0);
         });
@@ -214,6 +217,8 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
     private async record(snapshot: AnyTlsCounters): Promise<void> {
         const state = await this.load();
         const delta = difference(snapshot, state.seen);
+        if (Object.values(delta).every((value) => value.uplink === '0' && value.downlink === '0'))
+            return;
         const totals = structuredClone(state.totals);
         for (const [name, values] of Object.entries(delta)) {
             if (!Object.hasOwn(totals, name)) totals[name] = { uplink: '0', downlink: '0' };
