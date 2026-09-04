@@ -23,6 +23,16 @@ export const configSchema = z
         INTERNAL_REST_TOKEN: z.string(),
         INTERNAL_SOCKET_PATH: z.string(),
         XTLS_API_SOCKET_PATH: z.string(),
+        MIERU_CONTROL_HELPER_PATH: z
+            .string()
+            .startsWith('/')
+            .default('/usr/local/bin/rw-mita-control'),
+        MIERU_ENABLED: booleanString(),
+        MIERU_METRICS_BASELINE_PATH: z
+            .string()
+            .startsWith('/')
+            .default('/var/lib/remnanode/mieru-metrics-baselines.json'),
+        MITA_UDS_PATH: z.string().startsWith('/').default('/var/run/mita/mita.sock'),
         NFTABLES_LOGGING: booleanString('true'),
         NFTABLES_ACCEPT_REPLY_TRAFFIC: booleanString('false'),
         SNI_VERIFICATION: booleanString('false'),

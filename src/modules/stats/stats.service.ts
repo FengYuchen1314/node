@@ -9,6 +9,10 @@ import { getSystemStats } from '@common/utils/get-system-stats';
 import { ERRORS } from '@libs/contracts/constants';
 
 import { GetTorrentBlockerReportsCountQuery } from '../_plugin/queries/get-torrent-blocker-reports-count';
+import {
+    MIERU_AGGREGATE_OUTBOUND_TAG,
+    MieruMetricsDeltaService,
+} from '../mieru/mieru-metrics-delta.service';
 import { GetInterfaceStatsQuery } from '../network-stats/queries/get-interface-stats/get-interface-stats.query';
 import { IGetUserOnlineStatusRequest } from './interfaces';
 import {
@@ -29,6 +33,7 @@ export class StatsService {
     constructor(
         @InjectXtls() private readonly xtlsSdk: XtlsApi,
         private readonly queryBus: QueryBus,
+        private readonly mieruMetrics: MieruMetricsDeltaService,
     ) {}
     private readonly logger = new Logger(StatsService.name);
 
@@ -93,6 +98,15 @@ export class StatsService {
 
     public async getUsersStats(reset: boolean): Promise<TResult<GetUsersStatsResponseModel>> {
         try {
+            if (this.mieruMetrics.isEnabled()) {
+                const users = await this.mieruMetrics.getUserDeltas('users', reset);
+                return ok(
+                    new GetUsersStatsResponseModel(
+                        users.filter((user) => user.uplink !== 0 || user.downlink !== 0),
+                    ),
+                );
+            }
+
             const response = await this.xtlsSdk.stats.getAllUsersStats(reset);
 
             if (!response.isOk || !response.data) {
@@ -208,6 +222,22 @@ export class StatsService {
 
     public async getCombinedStats(reset: boolean): Promise<TResult<GetCombinedStatsResponseModel>> {
         try {
+            if (this.mieruMetrics.isEnabled()) {
+                const aggregate = await this.mieruMetrics.getAggregateDelta(reset);
+                return ok(
+                    new GetCombinedStatsResponseModel(
+                        [],
+                        [
+                            {
+                                outbound: MIERU_AGGREGATE_OUTBOUND_TAG,
+                                uplink: aggregate.uplink,
+                                downlink: aggregate.downlink,
+                            },
+                        ],
+                    ),
+                );
+            }
+
             const { isOk: isOkInbounds, data: inboundsData } =
                 await this.xtlsSdk.stats.getAllInboundsStats(reset);
             const { isOk: isOkOutbounds, data: outboundsData } =

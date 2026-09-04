@@ -18,6 +18,21 @@ RUN npm run build \
     && chmod +x dist/cli.js
 
 
+FROM golang:1.26.8-alpine@sha256:ce864e7223ac17b1775e6fd0b4c0db580c2eb50e7953a427916379e4b92a1628 AS mita-control
+
+WORKDIR /src
+
+COPY tools/mita-control/go.mod tools/mita-control/go.sum ./
+RUN go mod download && go mod verify
+
+COPY tools/mita-control/*.go ./
+
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
+    go build -mod=readonly -trimpath -ldflags='-s -w' -o /out/rw-mita-control .
+
+
 FROM alpine:3.21 AS xray
 
 ARG XRAY_CORE_VERSION=v26.7.28
@@ -96,6 +111,7 @@ COPY --from=xray /usr/local/share/xray/geoip.dat /usr/local/share/xray/geoip.dat
 COPY --from=xray /usr/local/share/xray/geosite.dat /usr/local/share/xray/geosite.dat
 COPY --from=asn /usr/local/share/asn /usr/local/share/asn
 COPY --from=geocheck /usr/local/bin/geocheck /usr/local/bin/geocheck
+COPY --from=mita-control /out/rw-mita-control /usr/local/bin/rw-mita-control
 
 COPY docker/rootfs/ /
 
