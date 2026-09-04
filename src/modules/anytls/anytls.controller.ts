@@ -18,7 +18,7 @@ class AnyTlsStatsDto extends createZodDto(
 // Activation is opt-in until mixed-Xray preparation/accounting and subscriptions are connected.
 @UseFilters(HttpExceptionFilter)
 @UseGuards(JwtDefaultGuard)
-@Controller('node/anytls')
+@Controller('anytls')
 export class AnyTlsController {
     constructor(private readonly runtime: AnyTlsRuntimeService) {}
     @Post('start') async start(@Body() body: ApplyAnyTlsDto) {

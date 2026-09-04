@@ -44,7 +44,11 @@ test(
             return socket;
         };
         const responseBody = 'managed-runtime-response-'.repeat(100);
+        let receivedRequests = 0;
+        let finishedResponses = 0;
         const target = createHttpServer((request, response) => {
+            receivedRequests++;
+            response.once('finish', () => finishedResponses++);
             request.resume();
             request.on('end', () => {
                 response.writeHead(200, {
@@ -147,6 +151,8 @@ test(
             target = targetPort,
         ): Promise<string> {
             const listener = config.listeners[index];
+            const beforeRequests = receivedRequests;
+            const beforeResponses = finishedResponses;
             const socksPort = await allocate();
             const path = join(directory, `client-${socksPort}`, 'client.json');
             await privateJson(path, {
@@ -200,11 +206,14 @@ test(
                 return await socksHttp(socksPort, target);
             } catch (error) {
                 if (
-                    password === 'a'.repeat(48) ||
-                    password === 'b'.repeat(48) ||
-                    password === 's'.repeat(48)
-                )
+                    target === targetPort &&
+                    listener.users.some((user) => user.password === password)
+                ) {
+                    t.diagnostic(
+                        `listener=${listener.tag} fixtureRequests=${receivedRequests - beforeRequests} fixtureResponses=${finishedResponses - beforeResponses}`,
+                    );
                     t.diagnostic(output);
+                }
                 throw error;
             } finally {
                 await stopChild(child);
@@ -285,6 +294,17 @@ test(
                         2 * Buffer.byteLength(responseBody),
                 );
                 assert.deepEqual(await first.runtime.users(true), []);
+            },
+        );
+        await t.test(
+            'short HTTP responses survive immediate target close across fresh sessions',
+            async () => {
+                // No retries: exercise the CI-observed empty-response case without delaying target FIN.
+                for (let attempt = 0; attempt < 12; attempt++) {
+                    const response = await client(attempt % 2, 's'.repeat(48));
+                    assert.equal(response.slice(response.indexOf('\r\n\r\n') + 4), responseBody);
+                }
+                await first.runtime.users(true);
             },
         );
         await t.test(
