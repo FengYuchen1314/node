@@ -119,7 +119,9 @@ Managed revocation, rollback and graceful-restart accounting now have native tes
 instantiate the runtime rather than calling the complete HTTPS/JWT Node API. These tests use one
 isolated VPS container, not multiple physical
 servers. They do not establish mainland reachability, resistance to GFW interference or a speed
-advantage. The user has no mainland probe endpoint.
+advantage. The user has now offered one mainland VPS, but its SSH host key differs from the
+locally saved identity. No probe has run there pending independent identity confirmation. A
+future successful test would establish only that probe network's reachability at that time.
 
 ## Historical security-only checkpoint
 
