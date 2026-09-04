@@ -11,18 +11,31 @@ gzip --decompress "$fixture_dir/mihomo.gz"
 chmod 700 "$fixture_dir/mihomo"
 RW_MIHOMO_BINARY="$fixture_dir/mihomo" RW_ANYTLS_CERT_DIR="$fixture_dir/certs" \
   node --test scripts/anytls-shadowtls-security.mjs
-# This is a server-only interoperability/accounting variant. The client remains native Mihomo.
-curl --fail --location --retry 3 --output "$fixture_dir/singbox.tar.gz" \
-  'https://github.com/SagerNet/sing-box/releases/download/v1.14.0/sing-box-1.14.0-linux-amd64.tar.gz'
-printf '%s  %s\n' '2375de6999f4f56ab46b4fc5ddf26a6aba1d3e61a0f4e7ddec2f4690457d5f63' "$fixture_dir/singbox.tar.gz" | sha256sum --check --strict
-tar --extract --gzip --file "$fixture_dir/singbox.tar.gz" --directory "$fixture_dir" \
-  --no-same-owner --no-same-permissions 'sing-box-1.14.0-linux-amd64/sing-box'
+# The upstream release omits cumulative statistics. Build the unchanged, pinned server source
+# with its official accounting feature. Compilation is restricted to GitHub Actions, never VPS.
+[[ "${GITHUB_ACTIONS:-}" == true ]] || { echo 'Server compilation must run in GitHub Actions.' >&2; exit 2; }
+server_commit='0b8995879f29a9b98ee027bc17b75e101445b238'
+git init --quiet "$fixture_dir/sing-box-source"
+git -C "$fixture_dir/sing-box-source" remote add origin https://github.com/SagerNet/sing-box.git
+git -C "$fixture_dir/sing-box-source" fetch --quiet --depth 1 origin "$server_commit"
+git -C "$fixture_dir/sing-box-source" checkout --quiet --detach FETCH_HEAD
+[[ "$(git -C "$fixture_dir/sing-box-source" rev-parse HEAD)" == "$server_commit" ]]
+(
+  cd "$fixture_dir/sing-box-source"
+  go mod download
+  go mod verify
+  go build -mod=readonly -trimpath -tags with_v2ray_api -ldflags '-s -w -buildid=' \
+    -o "$fixture_dir/sing-box" ./cmd/sing-box
+)
 RW_MIHOMO_BINARY="$fixture_dir/mihomo" RW_ANYTLS_CERT_DIR="$fixture_dir/certs" \
-  RW_ANYTLS_INNER_BINARY="$fixture_dir/sing-box-1.14.0-linux-amd64/sing-box" \
+  RW_ANYTLS_INNER_BINARY="$fixture_dir/sing-box" \
   node --test scripts/anytls-shadowtls-security.mjs
 if [[ -n "${RW_ANYTLS_EXPORT_DIR:-}" ]]; then
   mkdir -p "$RW_ANYTLS_EXPORT_DIR"
-  cp "$fixture_dir/mihomo" "$fixture_dir/sing-box-1.14.0-linux-amd64/sing-box" \
+  cp "$fixture_dir/mihomo" "$fixture_dir/sing-box" \
     scripts/anytls-shadowtls-security.mjs scripts/anytls-test-stats.mjs \
     scripts/anytls-test-certificates.sh scripts/vps-anytls-security.sh "$RW_ANYTLS_EXPORT_DIR/"
+  cp "$fixture_dir/sing-box-source/LICENSE" "$RW_ANYTLS_EXPORT_DIR/SINGBOX_LICENSE"
+  printf '%s\n' "$server_commit" > "$RW_ANYTLS_EXPORT_DIR/SINGBOX_SOURCE_COMMIT"
+  printf '%s\n' 'with_v2ray_api' > "$RW_ANYTLS_EXPORT_DIR/SINGBOX_BUILD_TAGS"
 fi
