@@ -1,0 +1,908 @@
+{
+  "records": [
+    {
+      "kind": "probe",
+      "schemaVersion": 1,
+      "probeId": "mainland-vps-1",
+      "declaredCountry": "CN",
+      "sourceOrigin": {
+        "asns": ["AS45090"],
+        "registryCountry": "CN",
+        "registry": "apnic",
+        "source": "Team Cymru DNS origin mapping"
+      },
+      "startedAt": "2026-09-04T22:49:02.536Z",
+      "nodeVersion": "v20.12.2",
+      "method": "PINNED_IPV4_TLS13_X25519_H2_HEAD",
+      "limitations": [
+        "Operator-declared location; public egress IP not independently observed.",
+        "IPv4 only; at most four A records per domain; one vantage point and one observation time.",
+        "Reachability is not attribution of a failure to GFW, non-Cloudflare proof or automatic panel eligibility."
+      ],
+      "scriptSha256": "9948fe5aa905be816bca2d9bcd753ef7054b15f3e0e7bc80aa4c73240af1bd39",
+      "sshIdentityVerified": true
+    },
+    {
+      "kind": "domain",
+      "domain": "lax.vultrcr.com",
+      "checkedAt": "2026-09-04T22:49:02.539Z",
+      "dns": {
+        "ipv4": ["207.246.97.216"],
+        "ipv6": ["2001:19f0:6001:3b0d:ffff:ffff:ffff:ffff"],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "207.246.97.216",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-10-27T09:28:06.000Z",
+            "certificateSha256": "DAE2C314F1FDFCF8E2E954B193CC09F6305DEE59B73560E03A6D9234879F1B32",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 401,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "207.246.96.0/20",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "lax-ca-us-ping.vultr.com",
+      "checkedAt": "2026-09-04T22:49:02.539Z",
+      "dns": {
+        "ipv4": ["108.61.219.200"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "108.61.219.200",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-14T23:59:59.000Z",
+            "certificateSha256": "C680A72CFC7415EA09A42774CE537CA7C0B8B1A345BFEC820F8767B33376D0B5",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "nginx",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "108.61.216.0/22",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "lax1.vultrobjects.com",
+      "checkedAt": "2026-09-04T22:49:03.390Z",
+      "dns": {
+        "ipv4": ["149.28.85.11"],
+        "ipv6": ["2001:19f0:6000:3c95::100"],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "149.28.85.11",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-18T09:04:05.000Z",
+            "certificateSha256": "1A83377256F8D52ED9D6523C42CB0DBE93CFCEA7EF1DF80D5518B20DE3AF7211",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 403,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "149.28.64.0/19",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "sjo-ca-us-ping.vultr.com",
+      "checkedAt": "2026-09-04T22:49:03.499Z",
+      "dns": {
+        "ipv4": ["104.156.230.107"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "104.156.230.107",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-14T23:59:59.000Z",
+            "certificateSha256": "C680A72CFC7415EA09A42774CE537CA7C0B8B1A345BFEC820F8767B33376D0B5",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "nginx",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "104.156.228.0/22",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "sjc.vultrcr.com",
+      "checkedAt": "2026-09-04T22:49:04.256Z",
+      "dns": {
+        "ipv4": ["149.28.196.153"],
+        "ipv6": ["2001:19f0:ac02:f1e:ffff:ffff:ffff:ffff"],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "149.28.196.153",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-01T11:12:45.000Z",
+            "certificateSha256": "52FB6559447ADA7C13E1211081C4C278718353A876D118D68339DF859F2417A8",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 401,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "149.28.192.0/19",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "sjc1.vultrobjects.com",
+      "checkedAt": "2026-09-04T22:49:04.493Z",
+      "dns": {
+        "ipv4": ["155.138.180.2"],
+        "ipv6": ["2001:19f0:ac00:2240::100"],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "155.138.180.2",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-16T05:15:32.000Z",
+            "certificateSha256": "B15AA3552D94EB88D3049CCA823931BCFB86353BC262935F68D4C298931BDB34",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 403,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "155.138.176.0/20",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "hnd-jp-ping.vultr.com",
+      "checkedAt": "2026-09-04T22:49:05.107Z",
+      "dns": {
+        "ipv4": ["108.61.201.151"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "108.61.201.151",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-14T23:59:59.000Z",
+            "certificateSha256": "C680A72CFC7415EA09A42774CE537CA7C0B8B1A345BFEC820F8767B33376D0B5",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "nginx",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "108.61.200.0/23",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "nrt1.vultrobjects.com",
+      "checkedAt": "2026-09-04T22:49:05.377Z",
+      "dns": {
+        "ipv4": ["202.182.111.119"],
+        "ipv6": ["2001:19f0:7001:55d1::100"],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "202.182.111.119",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-20T07:14:22.000Z",
+            "certificateSha256": "742D0C3ECA61B3ADE66A0367B0A469F6F2377CEE00446E8395DD8800E3FFC5B1",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 403,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "202.182.96.0/20",
+            "registryCountry": "US",
+            "registry": "apnic",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "www.yahoo.co.jp",
+      "checkedAt": "2026-09-04T22:49:06.001Z",
+      "dns": {
+        "ipv4": ["182.22.31.124"],
+        "ipv6": [],
+        "cnames": ["edge12.g.yimg.jp"],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "182.22.31.124",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2027-02-21T14:59:00.000Z",
+            "certificateSha256": "A2EAD6D26BFFF17AA78830188735563E4519BB0BA984FEEC028B934C9D9B653E",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS23816"],
+            "prefix": "182.22.0.0/17",
+            "registryCountry": "JP",
+            "registry": "apnic",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "sgp1.digitaloceanspaces.com",
+      "checkedAt": "2026-09-04T22:49:06.508Z",
+      "dns": {
+        "ipv4": ["103.253.144.208"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "103.253.144.208",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-12-22T23:59:59.000Z",
+            "certificateSha256": "6F7459082CCB2B7D15EA040407E2F75161376828979EE94F81851461AF4FB411",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS14061"],
+            "prefix": "103.253.144.0/22",
+            "registryCountry": "SG",
+            "registry": "apnic",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "sgp-ping.vultr.com",
+      "checkedAt": "2026-09-04T22:49:06.298Z",
+      "dns": {
+        "ipv4": ["45.32.100.168"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "45.32.100.168",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-14T23:59:59.000Z",
+            "certificateSha256": "C680A72CFC7415EA09A42774CE537CA7C0B8B1A345BFEC820F8767B33376D0B5",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "nginx",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "45.32.96.0/19",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "fra-de-ping.vultr.com",
+      "checkedAt": "2026-09-04T22:49:07.922Z",
+      "dns": {
+        "ipv4": ["108.61.210.117"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "108.61.210.117",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-14T23:59:59.000Z",
+            "certificateSha256": "C680A72CFC7415EA09A42774CE537CA7C0B8B1A345BFEC820F8767B33376D0B5",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "nginx",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "108.61.210.0/23",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "sgp1.vultrobjects.com",
+      "checkedAt": "2026-09-04T22:49:07.759Z",
+      "dns": {
+        "ipv4": ["45.32.96.10"],
+        "ipv6": ["2001:19f0:4400:1::100"],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "45.32.96.10",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-14T05:00:19.000Z",
+            "certificateSha256": "2D5BADF291F617FDEF9C000D04ABFE9921E7CFB2D2782E93201EE70F2AAB8D08",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 403,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "45.32.96.0/19",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "fra1.digitaloceanspaces.com",
+      "checkedAt": "2026-09-04T22:49:09.012Z",
+      "dns": {
+        "ipv4": ["5.101.109.44"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "5.101.109.44",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-01T23:59:59.000Z",
+            "certificateSha256": "84F3F1E51DF88C16E41C5450A7C981D36C07248D2423C977D3F7F859A2528B2E",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS14061"],
+            "prefix": "5.101.109.0/24",
+            "registryCountry": "US",
+            "registry": "ripencc",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "s3.eu-central-4.ionoscloud.com",
+      "checkedAt": "2026-09-04T22:49:09.123Z",
+      "dns": {
+        "ipv4": ["212.227.23.250"],
+        "ipv6": ["2001:8d8:106:1ff::fffe"],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "212.227.23.250",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-12-05T23:59:59.000Z",
+            "certificateSha256": "E221DD6D1448018D7BA39D5B62E4BFE473C78936EDF371D3FB2B3B83EAF93C8B",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "IONOSCS",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS8560"],
+            "prefix": "212.227.0.0/16",
+            "registryCountry": "DE",
+            "registry": "ripencc",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "lon1.digitaloceanspaces.com",
+      "checkedAt": "2026-09-04T22:49:10.186Z",
+      "dns": {
+        "ipv4": ["5.101.111.152"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "5.101.111.152",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-20T23:59:59.000Z",
+            "certificateSha256": "EC6ED70A2F3EC213F2F5654ED75D40CAF21E98090D27059310803C6403DAAD75",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS14061"],
+            "prefix": "5.101.111.0/24",
+            "registryCountry": "US",
+            "registry": "ripencc",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "lon-gb-ping.vultr.com",
+      "checkedAt": "2026-09-04T22:49:09.965Z",
+      "dns": {
+        "ipv4": ["108.61.196.101"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "108.61.196.101",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-14T23:59:59.000Z",
+            "certificateSha256": "C680A72CFC7415EA09A42774CE537CA7C0B8B1A345BFEC820F8767B33376D0B5",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "nginx",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "108.61.196.0/23",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "ams-nl-ping.vultr.com",
+      "checkedAt": "2026-09-04T22:49:11.249Z",
+      "dns": {
+        "ipv4": ["108.61.198.102"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "108.61.198.102",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-14T23:59:59.000Z",
+            "certificateSha256": "C680A72CFC7415EA09A42774CE537CA7C0B8B1A345BFEC820F8767B33376D0B5",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "nginx",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "108.61.198.0/23",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "lhr1.vultrobjects.com",
+      "checkedAt": "2026-09-04T22:49:11.167Z",
+      "dns": {
+        "ipv4": ["45.77.225.23"],
+        "ipv6": ["2001:19f0:7401:8426::100"],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "45.77.225.23",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-11-19T11:20:27.000Z",
+            "certificateSha256": "86D9F820A44BDCD332FFEA2584B3A698AA6DB86C6C017C8BA9CBBBDF939BA428",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 403,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "45.77.224.0/21",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "ams3.digitaloceanspaces.com",
+      "checkedAt": "2026-09-04T22:49:12.457Z",
+      "dns": {
+        "ipv4": ["5.101.110.225"],
+        "ipv6": [],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "5.101.110.225",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-12-17T23:59:59.000Z",
+            "certificateSha256": "2B8556F957A7786A48B933C646FD2238803A9FA0C1D699D16993077E76202FC1",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 200,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS14061"],
+            "prefix": "5.101.110.0/24",
+            "registryCountry": "US",
+            "registry": "ripencc",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    },
+    {
+      "kind": "domain",
+      "domain": "ams1.vultrobjects.com",
+      "checkedAt": "2026-09-04T22:49:12.488Z",
+      "dns": {
+        "ipv4": ["173.199.112.10"],
+        "ipv6": ["2001:19f0:5000:1::100"],
+        "cnames": [],
+        "error": null
+      },
+      "attempts": [
+        {
+          "address": "173.199.112.10",
+          "tls": {
+            "version": "TLSv1.3",
+            "alpn": "h2",
+            "keyExchangeGroup": "X25519",
+            "certificateNotAfter": "2026-10-16T05:26:11.000Z",
+            "certificateSha256": "F4A41E821B194E34A9994099DF117808471822BF8326D957FB6BB9DE45B972B5",
+            "sanMatches": true
+          },
+          "reachable": true,
+          "http": {
+            "status": 403,
+            "server": "",
+            "location": "",
+            "cfRayPresent": false
+          },
+          "origin": {
+            "asns": ["AS20473"],
+            "prefix": "173.199.112.0/23",
+            "registryCountry": "US",
+            "registry": "arin",
+            "source": "Team Cymru DNS origin mapping"
+          },
+          "cloudflareSignals": []
+        }
+      ],
+      "automaticallyEligible": false,
+      "omittedIpv4Count": 0,
+      "outcome": "REACHABLE_FROM_THIS_PROBE"
+    }
+  ]
+}

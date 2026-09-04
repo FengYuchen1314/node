@@ -119,9 +119,9 @@ Managed revocation, rollback and graceful-restart accounting now have native tes
 instantiate the runtime rather than calling the complete HTTPS/JWT Node API. These tests use one
 isolated VPS container, not multiple physical
 servers. They do not establish mainland reachability, resistance to GFW interference or a speed
-advantage. The user has now offered one mainland VPS, but its SSH host key differs from the
-locally saved identity. No probe has run there pending independent identity confirmation. A
-future successful test would establish only that probe network's reachability at that time.
+advantage. A separately verified mainland VPS has now completed a read-only domain-discovery
+run; see mainland-camouflage-probe.md. That observation does not establish protocol connectivity
+or nationwide availability.
 
 ## Historical security-only checkpoint
 
@@ -156,5 +156,17 @@ Node.js/dependency runtime, with new compiled test code and native cores mounted
 Actions. It does not establish acceptance of the new complete AnyTLS Node image. The disposable
 container was removed, both PDF containers remained healthy, and HTTP 38100 returned 200.
 
-Generation cleanup and its regression tests were added after this checkpoint; their final CI/VPS
-results must be recorded separately rather than attributed to the b027eb9 run.
+The cleanup/ownership patch `ec632cfe101dfebb010aabc6a522c536544eb0fb` passed
+[CI](https://github.com/FengYuchen1314/node/actions/runs/33925806458) and the separate
+[multi-architecture image build](https://github.com/FengYuchen1314/node/actions/runs/33925806431).
+Its archive SHA-256 was verified locally and remotely:
+`b712ee555961e2235304d6a2d2b2ebc99c6934710f1665193d7b3ccece5e29fd`.
+All 24 tests passed again at `/opt/xboard-anytls-test.BeOzXq4t`, including assertions that reload,
+rollback, shutdown and explicit stop leave no retired generated credential directories. The
+standard VPS script worked without the ownership correction needed by the previous archive.
+The disposable container was removed and both PDF services stayed healthy, HTTP 38100 = 200.
+
+The ec632cf image was compile-only, with WIP pushing still disabled at that checkpoint. Following
+it, the workflow publishes WIP images only to `sha-<source commit>` tags so complete-image API
+acceptance can run without updating `xboard-dev`. Publishing a hash tag is not deployment; full
+API and image-binary acceptance remain to be performed on that exact produced digest.
