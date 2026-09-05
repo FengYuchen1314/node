@@ -21,7 +21,6 @@ import { AnyTlsRuntimeIO } from './anytls-runtime.io';
 import { AnyTlsRuntimeService } from './anytls-runtime.service';
 import { AnyTlsRuntimeStore, privateJson } from './anytls-runtime.store';
 import { AnyTlsStatsClient } from './anytls-stats.client';
-import { MihomoStartupReadiness } from './mihomo-startup-readiness';
 
 test(
     'managed AnyTLS runtime: native clients, listener isolation, accounting, rollback and restart',
@@ -287,18 +286,19 @@ test(
         );
         await t.test(
             'open native wrapper ports remain unready until the generation-specific post-up handshake',
-            async () => {
+            async (gateTest) => {
                 const release = join(directory, 'release-startup');
-                const wrapper = join(directory, 'gated-mihomo.sh');
-                const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-                const postUp = `while [ ! -f ${quote(release)} ]; do sleep 0.01; done; ${new MihomoStartupReadiness(directory).args[1]}`;
-                // Test-only launcher keeps the real, unmodified core and holds its post-up callback.
-                // All production flags remain intact; the last -post-up deliberately gates this case.
-                await writeFile(
-                    wrapper,
-                    `#!/bin/sh\nexec ${quote(process.env.RW_MIHOMO_BINARY!)} "$@" -post-up ${quote(postUp)}\n`,
-                    { mode: 0o700 },
-                );
+                // The immutable launcher ships alongside the Actions artifact so /tmp can stay
+                // noexec. It preserves the real core and gates only its post-up callback.
+                const wrapper = process.env.RW_ANYTLS_STARTUP_GATE;
+                assert(wrapper, 'The native startup-gate fixture is required');
+                const previousRelease = process.env.RW_ANYTLS_TEST_GATE_RELEASE;
+                process.env.RW_ANYTLS_TEST_GATE_RELEASE = release;
+                gateTest.after(() => {
+                    if (previousRelease === undefined)
+                        delete process.env.RW_ANYTLS_TEST_GATE_RELEASE;
+                    else process.env.RW_ANYTLS_TEST_GATE_RELEASE = previousRelease;
+                });
                 const gatedEnv = {
                     getOrThrow: (key: keyof typeof values) => {
                         if (key === 'ANYTLS_MIHOMO_PATH') return wrapper;

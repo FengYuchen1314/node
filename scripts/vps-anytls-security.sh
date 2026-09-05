@@ -7,6 +7,7 @@ test_dir="$(realpath -- "${1:?Pass a private /opt/xboard-anytls-test.* directory
 [[ -f "$test_dir/SOURCE_COMMIT" && -x "$test_dir/mihomo" && -x "$test_dir/sing-box" ]]
 [[ -x "$test_dir/rw-core-supervisor" && -f "$test_dir/anytls-runtime.test.cjs" ]]
 [[ -f "$test_dir/anytls-startup-readiness.test.cjs" ]]
+[[ -x "$test_dir/mihomo-startup-gate.sh" ]]
 read -r source_commit < "$test_dir/SOURCE_COMMIT"
 [[ "$source_commit" =~ ^[a-f0-9]{40}$ ]]
 mkdir -m 700 "$test_dir/certs"
@@ -27,5 +28,6 @@ docker run --rm --name "$container" --network none --read-only \
   --env RW_MIHOMO_BINARY=/test/mihomo --env RW_ANYTLS_CERT_DIR=/test/certs \
   --env RW_ANYTLS_INNER_BINARY=/test/sing-box \
   --env RW_ANYTLS_RUNTIME_INTEGRATION=1 --env RW_ANYTLS_SUPERVISOR_BINARY=/test/rw-core-supervisor \
+  --env RW_ANYTLS_STARTUP_GATE=/test/mihomo-startup-gate.sh \
   --env NODE_PATH=/opt/app/dist/node_modules \
   --entrypoint /usr/local/bin/node "$image" --test /test/anytls-shadowtls-security.mjs /test/anytls-runtime.test.cjs /test/anytls-startup-readiness.test.cjs

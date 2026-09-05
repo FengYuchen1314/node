@@ -34,7 +34,7 @@ RW_MIHOMO_BINARY="$fixture_dir/mihomo" RW_ANYTLS_CERT_DIR="$fixture_dir/certs" \
   cd tools/mita-control
   go build -mod=readonly -trimpath -ldflags '-s -w' -o "$fixture_dir/rw-core-supervisor" ./supervisor
 )
-export RW_ANYTLS_RUNTIME_INTEGRATION=1 RW_MIHOMO_BINARY="$fixture_dir/mihomo" \
+export RW_ANYTLS_RUNTIME_INTEGRATION=1 RW_MIHOMO_BINARY="$fixture_dir/mihomo" RW_ANYTLS_STARTUP_GATE="$PWD/scripts/mihomo-startup-gate.sh" \
   RW_ANYTLS_INNER_BINARY="$fixture_dir/sing-box" RW_ANYTLS_SUPERVISOR_BINARY="$fixture_dir/rw-core-supervisor" RW_ANYTLS_CERT_DIR="$fixture_dir/certs"
 npx tsx --test src/modules/anytls/anytls-runtime.linux.test.ts
 NODE_ENV=production npx rspack build --config scripts/anytls-runtime-test.rspack.mjs
@@ -43,7 +43,7 @@ if [[ -n "${RW_ANYTLS_EXPORT_DIR:-}" ]]; then
   mkdir -p "$RW_ANYTLS_EXPORT_DIR"
   cp "$fixture_dir/mihomo" "$fixture_dir/sing-box" "$fixture_dir/rw-core-supervisor" test-dist/anytls-runtime.test.cjs test-dist/anytls-startup-readiness.test.cjs \
     scripts/anytls-shadowtls-security.mjs scripts/anytls-test-stats.mjs scripts/mihomo-test-readiness.mjs \
-    scripts/anytls-test-certificates.sh scripts/vps-anytls-security.sh "$RW_ANYTLS_EXPORT_DIR/"
+    scripts/anytls-test-certificates.sh scripts/mihomo-startup-gate.sh scripts/vps-anytls-security.sh "$RW_ANYTLS_EXPORT_DIR/"
   cp "$fixture_dir/sing-box-source/LICENSE" "$RW_ANYTLS_EXPORT_DIR/SINGBOX_LICENSE"
   printf '%s\n' "$server_commit" > "$RW_ANYTLS_EXPORT_DIR/SINGBOX_SOURCE_COMMIT"
   printf '%s\n' 'with_v2ray_api,with_clash_api' > "$RW_ANYTLS_EXPORT_DIR/SINGBOX_BUILD_TAGS"
