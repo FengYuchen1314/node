@@ -230,10 +230,59 @@ The API smoke now uses live public camouflage endpoints with the production vali
 CF/private/unresolvable rejection before and after a successful start, and checks unsafe saved
 state on a full reboot. Only in-process native fixtures substitute their own network policy;
 there is no production API/environment option to bypass the guard. The older complete-image
-checkpoint above predates this guard. Full-image verification of this change is pending.
+checkpoint above predates this guard.
 
 Local checks: 89 Node tests passed, 4 Linux-only tests skipped; all 9 standalone probe tests,
 type-check and lint passed. Previous CI
 [33929716781](https://github.com/FengYuchen1314/node/actions/runs/33929716781) again failed the
 compiled short-connection test with zero fixture requests. Its separate image build succeeded;
 that does not resolve the native transport failure.
+
+Node `d60f2e70a7e33366774705ac214c037b11e9b1b3` passed its
+[image build](https://github.com/FengYuchen1314/node/actions/runs/33930849549).
+The exact digest verified from Actions and the VPS pull was
+`sha256:842c73b7edd2d7186f58c5f700d6af0dcb6cb5a311bcf76fcd1f0a97cc0a304f`.
+Full-image API acceptance passed on 185.99.135.224 at
+`/opt/xboard-anytls-api-test.8SGa6Na8`: live public camouflage validation; CF IPv4, CF IPv6,
+known CF hostname, private-IP and unresolved-domain rejection before and after listener start;
+unchanged reconciliation; explicit stop and full restarts; invalid saved-state bootstrap
+without listeners but with working management. The complete Xray API also rejected CF and
+unverified REALITY before core startup. This does not establish successful REALITY protocol
+traffic, combined shared-443 AnyTLS traffic or frontend/backend acceptance.
+
+The source-script archive SHA-256 was verified locally and remotely:
+`a1b2d5292b2488507352e6a19bff9e54d0ffb2219efb4357e741c38dff71bd0c`.
+On Windows use `git -c core.autocrlf=false archive` when exporting Linux scripts; the initial
+archive inherited CRLF from Git's export conversion and was corrected before execution.
+The disposable API container was removed, both existing PDF containers stayed healthy and
+HTTP 38100 returned 200.
+
+The same commit's [full CI](https://github.com/FengYuchen1314/node/actions/runs/33930849542)
+remained failed: both standalone security variants passed, but the source managed-runtime
+short-connection case returned empty HTTP with zero fixture requests (7 passes, 2 failures
+including the parent). The compiled managed step was not reached. No native transport fix
+has been shipped or inferred from the passing image API test.
+
+### Startup-readiness diagnosis (not a protocol fix)
+
+Separate disposable scripts in `/opt/xboard-anytls-diagnostic.aeZRO3GY` narrow the failure:
+
+- `small-request.log`: 100 fresh small GET/short-response encrypted sessions passed with the
+  normal 50 ms port-readiness polling interval and no configured client fingerprint.
+- `startup-race.log`: reducing only port polling to 1 ms produced 20 failed sessions out of 30
+  (10 passes, 21 failures including the parent). Empty responses again had zero fixture requests.
+- `direct-startup.log`: an independent SOCKS-to-DIRECT-only client, with no AnyTLS, ShadowTLS
+  or TLS at all, failed 19 of 30 first requests sent as soon as the SOCKS port opened. All 30
+  separate diagnostic contrast requests 100 ms later succeeded. This delay is an experiment,
+  not an implemented retry, readiness fix or changed acceptance requirement.
+
+The unmodified pinned Mihomo
+[executor](https://github.com/MetaCubeX/mihomo/blob/v1.19.30/hub/executor/executor.go) opens
+listeners before finishing provider initialization and switching the tunnel to running;
+the [TCP handler](https://github.com/MetaCubeX/mihomo/blob/v1.19.30/tunnel/tunnel.go) closes
+external connections while not running. These observations establish that an open SOCKS port
+is insufficient application readiness and strongly suggest a startup race in the test client.
+They do not yet attribute every earlier failed AnyTLS case or establish stable protocol traffic.
+The next step is application-level readiness before no-retry proxy acceptance, then fresh
+source/compiled/VPS lifecycle and security tests. Production code and acceptance have not
+been changed to add sleeps or conceal failures. All diagnostic containers were removed.
