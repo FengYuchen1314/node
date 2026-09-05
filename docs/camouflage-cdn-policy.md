@@ -51,3 +51,35 @@ The corrected code has local unit, real HTTP/2 fixture, type-check and lint cove
 full-image API smoke additionally checks rejection of known service domains before and after
 listener startup and live authenticated domain-report wiring. Record the exact Actions run
 and full-image VPS result after they finish; source tests alone are not deployment acceptance.
+
+## Verified checkpoint: 2026-09-05
+
+Node `f6a48b8f0b3187f79e25ca0fa46f40815c79ca96` passed
+[CI](https://github.com/FengYuchen1314/node/actions/runs/33933254689) and its separate
+[image build](https://github.com/FengYuchen1314/node/actions/runs/33933254675). CI passed 99
+ordinary tests with 4 Linux-only skips, 10 standalone discovery tests, native Mieru and edge
+checks, both AnyTLS security variants (13/16 tests) and source/compiled managed suites (9 each).
+Backend `a9b5b4b893f2ada03648366fd9774335857752ad` passed
+[CI](https://github.com/FengYuchen1314/backend/actions/runs/33933257931), including 70 ordinary
+tests and its existing topology/database/build checks. Both repositories passed local type-check
+and lint. The subsequent backend pipeline-only commit does not alter this domain policy.
+
+The exact Node image digest, verified from Actions and the VPS pull, is
+`sha256:ee7f59d444689c4dd438c438407c921da999b1cca10cd876600eeac4f9eecbee`.
+Full API/image acceptance passed on 185.99.135.224 in
+`/opt/xboard-anytls-api-test.v14QSgAn`. The source-script archive SHA-256 was checked locally
+and remotely: `031d9b1c41a2c9d12117e948a6067bf1b4d84e128af8db7fd20b9a839ff7eaab`.
+The live authenticated discovery API reported Cloudflare HTTP evidence; AnyTLS and Xray
+creation rejected the known Cloudflare service names; rejection with an existing runtime,
+unchanged reconcile, full restart/stop and unsafe saved-state restoration all passed. This
+is Agent API acceptance, not managed panel creation or combined protocol traffic.
+The disposable container was removed; both PDF containers remained healthy, HTTP 38100 = 200.
+
+At 00:32:43 UTC the updated plain-JavaScript discovery script was also run from the verified
+mainland VPS, using its existing Node.js binary. Script SHA-256, verified locally and remotely:
+`d964c73519df1b6a2658412b13c5e1e500e36008317e79a0a8abbf6ea1d57d36`.
+`www.cloudflare.com`, `tenant.pages.dev`, `tenant.workers.dev` and `bucket.r2.dev` were all
+excluded with zero TLS/HTTP attempts. A separate `lax1.vultrobjects.com` control completed
+TLS 1.3/X25519/h2, matching SAN, valid certificate lifetime and no observed CF signals.
+This bounded control run did not recheck every pool entry or change automatic eligibility.
+The existing Java/MCSManager processes were left running; no software or service was installed.
