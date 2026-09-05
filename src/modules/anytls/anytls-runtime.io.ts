@@ -14,6 +14,7 @@ import { TAnyTlsConfig } from '@libs/contracts/models';
 import { AnyTlsConfigRenderer, AnyTlsRenderOptions } from './anytls-config';
 import { hasCode, privateJson } from './anytls-runtime.store';
 import { AnyTlsCounters, AnyTlsStatsClient } from './anytls-stats.client';
+import { MihomoStartupReadiness } from './mihomo-startup-readiness';
 
 interface Child {
     child: ChildProcess;
@@ -38,6 +39,7 @@ export class AnyTlsRuntimeIO {
     private readonly outer: string;
     private readonly inner: string;
     private leaseOwned = false;
+    private ready = false;
 
     constructor(
         private readonly env: TypedConfigService,
@@ -51,6 +53,9 @@ export class AnyTlsRuntimeIO {
     }
 
     isRunning(): boolean {
+        return this.ready && this.coresAlive();
+    }
+    private coresAlive(): boolean {
         return ['outer', 'inner'].every((name) => {
             const child = this.children.get(name);
             return child && !child.exited;
@@ -174,6 +179,7 @@ export class AnyTlsRuntimeIO {
 
     async start(prepared: PreparedAnyTls): Promise<void> {
         if (this.hasChildren()) throw new Error('The previous AnyTLS runtime is still owned.');
+        this.ready = false;
         await this.acquire();
         const ports = [
             prepared.options.statsPort,
@@ -186,6 +192,7 @@ export class AnyTlsRuntimeIO {
         // An unrelated process must not be mistaken for successful startup/readiness.
         for (const port of ports) await assertUnusedPort(port);
         this.prepared = prepared;
+        const readiness = new MihomoStartupReadiness(prepared.directory);
         try {
             await this.spawn(
                 'inner',
@@ -202,10 +209,22 @@ export class AnyTlsRuntimeIO {
             await this.spawn(
                 'outer',
                 this.outer,
-                ['-d', prepared.directory, '-f', join(prepared.directory, 'outer.json')],
+                [
+                    '-d',
+                    prepared.directory,
+                    '-f',
+                    join(prepared.directory, 'outer.json'),
+                    ...readiness.args,
+                ],
                 prepared.config.listeners.map((listener) => listener.wrapperPort),
+                readiness.environment,
             );
+            await readiness.wait(() => this.coresAlive());
+            await readiness.dispose();
+            if (!this.coresAlive()) throw new Error('AnyTLS core exited during readiness.');
+            this.ready = true;
         } catch {
+            await readiness.dispose().catch(() => undefined);
             // Keep owned children available to the runtime's final-counter/rollback path.
             throw new Error('AnyTLS startup failed.');
         }
@@ -217,6 +236,7 @@ export class AnyTlsRuntimeIO {
     }
 
     async retire(): Promise<AnyTlsCounters> {
+        this.ready = false;
         if (!this.prepared || !this.hasChildren()) return {};
         const innerAlive = this.children.get('inner')?.exited === false;
         await this.terminate('outer');
@@ -241,6 +261,7 @@ export class AnyTlsRuntimeIO {
     }
 
     async abort(): Promise<void> {
+        this.ready = false;
         const results = await Promise.allSettled(
             ['outer', 'inner'].map((name) => this.terminate(name)),
         );
@@ -276,10 +297,12 @@ export class AnyTlsRuntimeIO {
         binary: string,
         args: string[],
         ports: number[],
+        environment?: Record<string, string>,
     ): Promise<void> {
         const child = spawn(this.supervisor, ['--binary', binary, '--', ...args], {
             stdio: ['pipe', 'ignore', 'ignore'],
             windowsHide: true,
+            env: environment ? { ...process.env, ...environment } : process.env,
         });
         let resolve!: () => void;
         const record: Child = {

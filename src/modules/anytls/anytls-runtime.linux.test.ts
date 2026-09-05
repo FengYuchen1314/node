@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, ChildProcess } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer as createHttpServer } from 'node:http';
 import { connect, createServer, Socket } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -21,6 +21,7 @@ import { AnyTlsRuntimeIO } from './anytls-runtime.io';
 import { AnyTlsRuntimeService } from './anytls-runtime.service';
 import { AnyTlsRuntimeStore, privateJson } from './anytls-runtime.store';
 import { AnyTlsStatsClient } from './anytls-stats.client';
+import { MihomoStartupReadiness } from './mihomo-startup-readiness';
 
 test(
     'managed AnyTLS runtime: native clients, listener isolation, accounting, rollback and restart',
@@ -281,6 +282,81 @@ test(
                     mutate(input);
                     await assert.rejects(first.runtime.apply(input));
                     assert.equal(first.io.isRunning(), false);
+                }
+            },
+        );
+        await t.test(
+            'open native wrapper ports remain unready until the generation-specific post-up handshake',
+            async () => {
+                const release = join(directory, 'release-startup');
+                const wrapper = join(directory, 'gated-mihomo.sh');
+                const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+                const postUp = `while [ ! -f ${quote(release)} ]; do sleep 0.01; done; ${new MihomoStartupReadiness(directory).args[1]}`;
+                // Test-only launcher keeps the real, unmodified core and holds its post-up callback.
+                // All production flags remain intact; the last -post-up deliberately gates this case.
+                await writeFile(
+                    wrapper,
+                    `#!/bin/sh\nexec ${quote(process.env.RW_MIHOMO_BINARY!)} "$@" -post-up ${quote(postUp)}\n`,
+                    { mode: 0o700 },
+                );
+                const gatedEnv = {
+                    getOrThrow: (key: keyof typeof values) => {
+                        if (key === 'ANYTLS_MIHOMO_PATH') return wrapper;
+                        if (key === 'ANYTLS_STATE_DIR')
+                            return join(directory, "state with 'quotes'; $dollar");
+                        return values[key];
+                    },
+                } as unknown as TypedConfigService;
+                const io = new AnyTlsRuntimeIO(
+                    gatedEnv,
+                    new FixtureRenderer(),
+                    new AnyTlsStatsClient(),
+                );
+                await io.acquire();
+                let starting: Promise<void> | undefined;
+                try {
+                    const prepared = await io.prepare(config);
+                    let settled = false;
+                    starting = io.start(prepared).finally(() => {
+                        settled = true;
+                    });
+                    void starting.catch(() => undefined);
+                    const deadline = Date.now() + 10000;
+                    while (true) {
+                        assert(Date.now() < deadline, 'Native wrapper did not open its port');
+                        assert.equal(settled, false, 'Startup finished before the post-up release');
+                        const socket = connect(config.listeners[0].wrapperPort, '127.0.0.1');
+                        try {
+                            await once(socket, 'connect');
+                            break;
+                        } catch {
+                            await delay(1);
+                        } finally {
+                            socket.destroy();
+                        }
+                    }
+                    assert.equal(io.hasChildren(), true);
+                    assert.equal(io.isRunning(), false);
+                    assert.equal(settled, false);
+                    await writeFile(release, 'release', { mode: 0o600 });
+                    await starting;
+                    assert.equal(io.isRunning(), true);
+                    assert(
+                        !(await readdir(prepared.directory)).some((name) =>
+                            name.startsWith('ready-'),
+                        ),
+                    );
+                    assert(
+                        Object.values(await io.retire()).every(
+                            (counter) => counter.uplink === '0' && counter.downlink === '0',
+                        ),
+                    );
+                    assert.equal(io.isRunning(), false);
+                } finally {
+                    await writeFile(release, 'release', { mode: 0o600 });
+                    await starting?.catch(() => undefined);
+                    await io.abort();
+                    await io.release();
                 }
             },
         );

@@ -38,10 +38,10 @@ export RW_ANYTLS_RUNTIME_INTEGRATION=1 RW_MIHOMO_BINARY="$fixture_dir/mihomo" \
   RW_ANYTLS_INNER_BINARY="$fixture_dir/sing-box" RW_ANYTLS_SUPERVISOR_BINARY="$fixture_dir/rw-core-supervisor" RW_ANYTLS_CERT_DIR="$fixture_dir/certs"
 npx tsx --test src/modules/anytls/anytls-runtime.linux.test.ts
 NODE_ENV=production npx rspack build --config scripts/anytls-runtime-test.rspack.mjs
-node --test test-dist/anytls-runtime.test.cjs
+node --test test-dist/anytls-*.test.cjs
 if [[ -n "${RW_ANYTLS_EXPORT_DIR:-}" ]]; then
   mkdir -p "$RW_ANYTLS_EXPORT_DIR"
-  cp "$fixture_dir/mihomo" "$fixture_dir/sing-box" "$fixture_dir/rw-core-supervisor" test-dist/anytls-runtime.test.cjs \
+  cp "$fixture_dir/mihomo" "$fixture_dir/sing-box" "$fixture_dir/rw-core-supervisor" test-dist/anytls-runtime.test.cjs test-dist/anytls-startup-readiness.test.cjs \
     scripts/anytls-shadowtls-security.mjs scripts/anytls-test-stats.mjs scripts/mihomo-test-readiness.mjs \
     scripts/anytls-test-certificates.sh scripts/vps-anytls-security.sh "$RW_ANYTLS_EXPORT_DIR/"
   cp "$fixture_dir/sing-box-source/LICENSE" "$RW_ANYTLS_EXPORT_DIR/SINGBOX_LICENSE"
