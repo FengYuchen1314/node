@@ -6,3 +6,4 @@ export * from './mieru.schema';
 export * from './node-metadata.schema';
 export * from './node-edge.schema';
 export * from './anytls.schema';
+export * from './anytls-usage.schema';

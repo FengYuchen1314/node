@@ -19,6 +19,7 @@ test('AnyTLS routes have exactly one global Node prefix and retain JWT protectio
         ['start', RequestMethod.POST],
         ['stop', RequestMethod.POST],
         ['stats', RequestMethod.POST],
+        ['usage', RequestMethod.GET],
     ] as const) {
         const handler = AnyTlsController.prototype[name];
         const path = `${ROOT}/${controllerPath}/${Reflect.getMetadata(PATH_METADATA, handler)}`;

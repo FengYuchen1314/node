@@ -18,6 +18,12 @@ export const AnyTlsRuntimeStateSchema = z
         totals: AnyTlsCountersSchema,
         seen: AnyTlsCountersSchema,
         billed: AnyTlsCountersSchema,
+        // Optional on legacy v1 files. Created durably on first cumulative poll;
+        // legacy billed bytes become its immutable baseline, not new usage.
+        usageLedger: z
+            .object({ epoch: z.uuid(), baseline: AnyTlsCountersSchema })
+            .strict()
+            .optional(),
     })
     .strict();
 export type AnyTlsRuntimeState = z.infer<typeof AnyTlsRuntimeStateSchema>;

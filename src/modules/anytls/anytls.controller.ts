@@ -36,4 +36,7 @@ export class AnyTlsController {
     @Post('stats') async stats(@Body() body: AnyTlsStatsDto) {
         return { response: { users: await this.runtime.users(body.reset) } };
     }
+    @Get('usage') async usage() {
+        return { response: await this.runtime.usage() };
+    }
 }

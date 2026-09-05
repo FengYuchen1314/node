@@ -140,6 +140,78 @@ function service(
     );
 }
 
+test('cumulative AnyTLS polls survive lost responses, reloads and reboot without resetting totals', async () => {
+    const io = new FakeIO();
+    const runtime = service(io);
+    await runtime.apply(desired());
+    io.add('1', 123, 456);
+    const first = await runtime.usage();
+    assert.equal(first.available, true);
+    if (!first.available) throw new Error('Usage unavailable');
+    assert.deepEqual(first.users, [{ username: '1', uplink: '123', downlink: '456' }]);
+    assert.deepEqual(await runtime.usage(), first);
+    assert.deepEqual(io.saved.billed, {});
+    await assert.rejects(runtime.users(true), /destructive stats resets/);
+    await runtime.apply(desired(14002));
+    io.add('1', 10, 20);
+    const afterReload = await runtime.usage();
+    assert.ok(afterReload.available);
+    assert.equal(afterReload.epoch, first.epoch);
+    assert.deepEqual(afterReload.users, [{ username: '1', uplink: '133', downlink: '476' }]);
+    await runtime.onModuleDestroy();
+    const reboot = service(io, true, async () => {}, true);
+    try {
+        await reboot.onModuleInit();
+        assert.deepEqual(await reboot.usage(), afterReload);
+    } finally {
+        await reboot.onModuleDestroy();
+    }
+});
+
+test('cumulative accounting migrates only unbilled legacy bytes and refuses unpublished disk state', async () => {
+    const io = new FakeIO();
+    io.saved.totals = { '1': { uplink: '9007199254741010', downlink: '500' } };
+    io.saved.billed = { '1': { uplink: '100', downlink: '200' } };
+    const runtime = service(io);
+    io.failWrite = (state) => !!state.usageLedger;
+    await assert.rejects(runtime.usage(), /disk failure/);
+    assert.equal(io.saved.usageLedger, undefined);
+    io.failWrite = undefined;
+    const snapshot = await runtime.usage();
+    assert.ok(snapshot.available);
+    assert.deepEqual(snapshot.users, [
+        { username: '1', uplink: '9007199254740910', downlink: '300' },
+    ]);
+    assert.deepEqual((await io.load()).usageLedger?.baseline, io.saved.billed);
+    assert.deepEqual(await runtime.usage(), snapshot);
+    await runtime.onModuleDestroy();
+    assert.deepEqual(await service(new FakeIO(), false).usage(), { available: false });
+});
+
+test('cumulative polls wait for the complete coordinated transition before exposing a snapshot', async () => {
+    const io = new FakeIO();
+    const runtime = service(io, true, async () => {}, true);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const update = runtime.withCoordinatedUpdate(desired(), async (transition) => {
+        await transition.apply();
+        entered.resolve();
+        await release.promise;
+    });
+    await entered.promise;
+    let exposed = false;
+    const poll = runtime.usage().then((value) => {
+        exposed = true;
+        return value;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(exposed, false);
+    release.resolve();
+    await update;
+    assert.ok((await poll).available);
+    await runtime.onModuleDestroy();
+});
+
 test('joint mode rejects standalone mutations, advertises capability and requires complete reconciliation after reboot', async () => {
     const io = new FakeIO();
     io.saved.desired = desired();

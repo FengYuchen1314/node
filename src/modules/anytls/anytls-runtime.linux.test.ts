@@ -484,7 +484,7 @@ test(
             },
         );
         await t.test(
-            'Agent restart restores desired state without replaying billed traffic; explicit stop stays stopped',
+            'Agent restart preserves legacy billing and cumulative epochs; explicit stop stays stopped',
             async () => {
                 await first.runtime.onModuleDestroy();
                 assert.deepEqual(await generations(), []);
@@ -494,13 +494,31 @@ test(
                 assert.deepEqual(await second.runtime.users(true), []);
                 assert((await client(0, 's'.repeat(48))).includes(responseBody));
                 assert((await second.runtime.users(true)).some((user) => user.downlink > 0));
+                const baseline = await second.runtime.usage();
+                assert.ok(baseline.available);
+                assert.ok(
+                    baseline.users.every((user) => user.uplink === '0' && user.downlink === '0'),
+                );
+                assert((await client(0, 's'.repeat(48))).includes(responseBody));
+                const cumulative = await second.runtime.usage();
+                assert.ok(cumulative.available);
+                assert.equal(cumulative.epoch, baseline.epoch);
+                assert.ok(
+                    cumulative.users.some(
+                        (user) => user.username === 'shared' && BigInt(user.downlink) > 0n,
+                    ),
+                );
+                assert.deepEqual(await second.runtime.usage(), cumulative);
+                await assert.rejects(second.runtime.users(true), /destructive stats resets/);
                 await second.runtime.stop();
+                const stoppedUsage = await second.runtime.usage();
                 assert.deepEqual(await generations(), []);
                 await second.runtime.onModuleDestroy();
                 const third = makeRuntime();
                 await third.runtime.onModuleInit();
                 assert.equal((await third.runtime.status()).isStarted, false);
                 assert.equal((await third.store.load()).desired, null);
+                assert.deepEqual(await third.runtime.usage(), stoppedUsage);
                 await third.runtime.apply(config);
                 const owned = third.io as unknown as {
                     lease: { record: { child: ChildProcess } };

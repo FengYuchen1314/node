@@ -7,7 +7,12 @@ import {
 } from '@nestjs/common';
 
 import { TypedConfigService } from '@common/config/app-config';
-import { AnyTlsConfigSchema, TAnyTlsConfig } from '@libs/contracts/models';
+import {
+    AnyTlsConfigSchema,
+    AnyTlsUsageResponseSchema,
+    TAnyTlsConfig,
+    TAnyTlsUsageResponse,
+} from '@libs/contracts/models';
 
 import { CamouflageRuntimePolicy } from '../camouflage-domain/camouflage-runtime-policy.service';
 import { AnyTlsRuntimeIO } from './anytls-runtime.io';
@@ -238,6 +243,10 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
         return this.lock(async () => {
             this.requireEnabled();
             const state = await this.load();
+            if (reset && state.usageLedger)
+                throw new BadRequestException(
+                    'Cumulative AnyTLS accounting is active; destructive stats resets are disabled.',
+                );
             await this.flushFinal();
             if (
                 (!this.awaitingCoordinatedStart && state.desired?.listeners.length) ||
@@ -254,6 +263,38 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
             if (reset && users.some((value) => value.uplink !== 0 || value.downlink !== 0))
                 await this.persist({ ...this.state!, billed: structuredClone(this.state!.totals) });
             return users.filter((value) => value.uplink !== 0 || value.downlink !== 0);
+        });
+    }
+
+    usage(): Promise<TAnyTlsUsageResponse> {
+        return this.lock(async () => {
+            if (!this.enabled()) return { available: false };
+            this.requireEnabled();
+            const state = await this.load();
+            await this.flushFinal();
+            if (
+                (!this.awaitingCoordinatedStart && state.desired?.listeners.length) ||
+                this.io.hasChildren()
+            )
+                await this.refresh();
+            const current = this.state!;
+            const ledger = current.usageLedger ?? {
+                epoch: randomUUID(),
+                baseline: structuredClone(current.billed),
+            };
+            const counters = difference(current.totals, ledger.baseline);
+            const snapshot = AnyTlsUsageResponseSchema.parse({
+                available: true,
+                version: 1,
+                epoch: ledger.epoch,
+                users: Object.entries(counters)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([username, values]) => ({ username, ...values })),
+            });
+            // Never publish an epoch or counters before the durable write succeeds.
+            // Polling/retrying does not clear totals or advance an acknowledgement.
+            if (!current.usageLedger) await this.persist({ ...current, usageLedger: ledger });
+            return snapshot;
         });
     }
 
@@ -407,3 +448,4 @@ function safeNumber(value: string): number {
         throw new Error('AnyTLS delta exceeds the accounting API safe integer limit.');
     return Number(integer);
 }
+import { randomUUID } from 'node:crypto';
