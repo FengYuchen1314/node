@@ -24,6 +24,12 @@ export class AnyTlsUpdateError extends Error {
     }
 }
 
+export interface CoordinatedAnyTlsTransition {
+    quiesce: () => Promise<void>;
+    apply: () => Promise<void>;
+    rollback: () => Promise<void>;
+}
+
 @Injectable()
 export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(AnyTlsRuntimeService.name);
@@ -35,6 +41,7 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
     private lastError: string | null = null;
     private pendingFinal: AnyTlsCounters | undefined;
     private shutdown: Promise<void> | undefined;
+    private awaitingCoordinatedStart = false;
 
     constructor(
         private readonly env: TypedConfigService,
@@ -49,6 +56,13 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
             await this.io.acquire();
             const state = await this.load();
             if (state.desired?.listeners.length) {
+                if (this.coordinated()) {
+                    // Saved listeners alone do not prove that Xray and the edge have the same
+                    // generation after a crash. The panel must reconcile the complete plan.
+                    this.awaitingCoordinatedStart = true;
+                    this.lastError = 'Awaiting coordinated Xray/AnyTLS/edge start from the panel.';
+                    return;
+                }
                 try {
                     await this.applyUnlocked(state.desired);
                 } catch {
@@ -100,6 +114,7 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
     }> {
         return this.lock(async () => {
             this.requireEnabled();
+            this.requireStandalone();
             const config = AnyTlsConfigSchema.parse(input);
             if (!config.listeners.length) {
                 await this.stopUnlocked();
@@ -112,8 +127,87 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
     stop(): Promise<{ isStopped: true }> {
         return this.lock(async () => {
             this.requireEnabled();
+            this.requireStandalone();
             await this.stopUnlocked();
             return { isStopped: true };
+        });
+    }
+
+    coordinated(): boolean {
+        return this.enabled() && this.env.getOrThrow('EDGE_ENABLED');
+    }
+
+    capabilities() {
+        return {
+            available: this.enabled(),
+            coordinatedStartVersion: this.coordinated() ? 1 : null,
+        };
+    }
+
+    // Keep the accounting/standalone API lock through edge commit or rollback, not just
+    // through process activation. Callbacks deliberately use the unlocked operations.
+    withCoordinatedUpdate<T>(
+        input: unknown,
+        operation: (runtime: CoordinatedAnyTlsTransition) => Promise<T>,
+    ): Promise<T> {
+        return this.lock(async () => {
+            this.requireEnabled();
+            if (!this.coordinated()) throw new Error('Coordinated AnyTLS requires a managed edge.');
+            const config = AnyTlsConfigSchema.parse(input);
+            if (config.listeners.length) {
+                try {
+                    this.io.validate(config);
+                } catch {
+                    throw new BadRequestException(
+                        'AnyTLS listener configuration failed validation.',
+                    );
+                }
+                await this.camouflage.assertAnyTls(config);
+            }
+            const state = await this.load();
+            // A saved but inactive generation is not a confirmed rollback target.
+            const previous = this.io.isRunning() ? structuredClone(state.desired) : null;
+            let attempted = false;
+            return operation({
+                quiesce: async () => {
+                    attempted = true;
+                    this.awaitingCoordinatedStart = false;
+                    await this.stopUnlocked();
+                },
+                apply: async () => {
+                    attempted = true;
+                    this.awaitingCoordinatedStart = false;
+                    if (config.listeners.length) await this.applyUnlocked(config);
+                    else await this.stopUnlocked();
+                },
+                rollback: async () => {
+                    if (!attempted) return;
+                    try {
+                        if (previous?.listeners.length) await this.applyUnlocked(previous);
+                        else await this.stopUnlocked();
+                    } catch {
+                        // applyUnlocked's standalone rollback may have restored the NEW config.
+                        // That must never survive a failed restoration of the joint generation.
+                        await this.io.abort().catch(() => undefined);
+                        await this.persist({ ...this.state!, desired: null, seen: {} }).catch(
+                            () => undefined,
+                        );
+                        this.lastError = 'Coordinated AnyTLS rollback was not confirmed.';
+                        throw new Error(this.lastError);
+                    }
+                },
+            });
+        });
+    }
+
+    withCoordinatedStop<T>(operation: (stop: () => Promise<void>) => Promise<T>): Promise<T> {
+        return this.lock(async () => {
+            this.requireEnabled();
+            if (!this.coordinated()) throw new Error('Coordinated AnyTLS requires a managed edge.');
+            return operation(async () => {
+                this.awaitingCoordinatedStart = false;
+                await this.stopUnlocked();
+            });
         });
     }
 
@@ -145,7 +239,11 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
             this.requireEnabled();
             const state = await this.load();
             await this.flushFinal();
-            if (state.desired?.listeners.length || this.io.hasChildren()) await this.refresh();
+            if (
+                (!this.awaitingCoordinatedStart && state.desired?.listeners.length) ||
+                this.io.hasChildren()
+            )
+                await this.refresh();
             const delta = difference(this.state!.totals, this.state!.billed);
             const users = Object.entries(delta).map(([username, value]) => ({
                 username,
@@ -276,6 +374,12 @@ export class AnyTlsRuntimeService implements OnModuleInit, OnModuleDestroy {
     }
     private requireEnabled(): void {
         if (!this.enabled() || this.stopped) throw new Error('Managed AnyTLS runtime is disabled.');
+    }
+    private requireStandalone(): void {
+        if (this.coordinated())
+            throw new BadRequestException(
+                'Use the coordinated Xray start/stop endpoint on a shared-443 Agent.',
+            );
     }
     private lock<T>(operation: () => Promise<T>): Promise<T> {
         const result = this.queue.then(operation);

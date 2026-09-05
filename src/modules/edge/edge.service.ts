@@ -3,6 +3,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { TypedConfigService } from '@common/config/app-config';
 import {
     NODE_EDGE_PLAN_VERSION,
+    TAnyTlsConfig,
     TNodeEdgePlan,
     TNodeEdgeStatusResponse,
 } from '@libs/contracts/models';
@@ -13,6 +14,9 @@ import { EdgeConfigIO } from './edge-config.io';
 @Injectable()
 export class EdgeService implements OnModuleInit {
     private readonly enabled: boolean;
+    private readonly coordinated: boolean;
+    private readonly managementPorts: number[];
+    private unsafeRecovery = false;
     private queue: Promise<unknown> = Promise.resolve();
 
     constructor(
@@ -20,10 +24,23 @@ export class EdgeService implements OnModuleInit {
         private readonly io: EdgeConfigIO,
     ) {
         this.enabled = config.getOrThrow('EDGE_ENABLED');
+        this.coordinated = this.enabled && config.getOrThrow('ANYTLS_ENABLED');
+        this.managementPorts = this.coordinated
+            ? [
+                  config.getOrThrow('NODE_PORT'),
+                  config.getOrThrow('ANYTLS_STATS_PORT'),
+                  config.getOrThrow('ANYTLS_CONTROL_PORT'),
+              ]
+            : [];
     }
 
     async onModuleInit(): Promise<void> {
-        if (this.enabled) await this.lock(() => this.io.recover());
+        if (this.enabled)
+            await this.lock(async () => {
+                await this.recover();
+                if (this.coordinated && (await this.io.readPlan())?.routes.length)
+                    await this.io.withdraw(await this.io.snapshot());
+            });
     }
 
     async status(): Promise<TNodeEdgeStatusResponse> {
@@ -36,7 +53,7 @@ export class EdgeService implements OnModuleInit {
             };
         return this.lock(async () => {
             try {
-                await this.io.recover();
+                await this.recover();
             } catch {
                 return {
                     available: false,
@@ -59,6 +76,7 @@ export class EdgeService implements OnModuleInit {
         xrayConfig: Record<string, unknown>,
         start: () => Promise<T>,
         rollback: () => Promise<void>,
+        anyTlsConfig?: TAnyTlsConfig,
     ): Promise<T> {
         return this.lock(async () => {
             if (!this.enabled) {
@@ -66,12 +84,29 @@ export class EdgeService implements OnModuleInit {
                 return start();
             }
             if (!plan) throw new Error('A shared-443 Agent requires an explicit edge plan.');
-            const validated = validateEdgePlan(plan, xrayConfig);
-            await rejectLocalEdgeLoops(validated);
-            await this.io.recover();
+            if (this.coordinated !== (anyTlsConfig !== undefined))
+                throw new Error(
+                    'A coordinated Agent requires an explicit AnyTLS configuration; other Agents must omit it.',
+                );
+            const validated = validateEdgePlan(
+                plan,
+                xrayConfig,
+                anyTlsConfig,
+                this.managementPorts,
+            );
+            await rejectLocalEdgeLoops(validated, anyTlsConfig, this.managementPorts);
+            await this.recover();
             const snapshot = await this.io.snapshot();
             await this.io.begin(snapshot);
+            let attempted = false;
             try {
+                // No new proxy admission while either runtime is being replaced. Keep Caddy's
+                // website/panel configuration until the entire new generation is ready.
+                if (this.coordinated) {
+                    await this.io.withdraw(snapshot);
+                    await this.io.begin(snapshot);
+                }
+                attempted = true;
                 const result = await start();
                 await this.io.apply(validated);
                 await this.io.commit();
@@ -79,12 +114,16 @@ export class EdgeService implements OnModuleInit {
             } catch {
                 let restored = true;
                 try {
-                    await rollback();
+                    if (attempted) await rollback();
                 } catch {
                     restored = false;
                 }
                 try {
-                    await this.io.restore(snapshot);
+                    if (restored) await this.io.restore(snapshot);
+                    else {
+                        this.unsafeRecovery = true;
+                        await this.io.withdraw(snapshot);
+                    }
                 } catch {
                     restored = false;
                 }
@@ -100,7 +139,7 @@ export class EdgeService implements OnModuleInit {
     stop<T>(stop: () => Promise<T>): Promise<T> {
         return this.lock(async () => {
             if (!this.enabled) return stop();
-            await this.io.recover();
+            await this.recover();
             const plan = await this.io.readPlan();
             if (plan) {
                 const snapshot = await this.io.snapshot();
@@ -116,6 +155,10 @@ export class EdgeService implements OnModuleInit {
             }
             return stop();
         });
+    }
+
+    private async recover(): Promise<void> {
+        await this.io.recover(this.coordinated || this.unsafeRecovery);
     }
 
     private lock<T>(operation: () => Promise<T>): Promise<T> {

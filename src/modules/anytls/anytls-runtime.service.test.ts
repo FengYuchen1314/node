@@ -124,14 +124,131 @@ class FakeIO {
         this.counters[name] = { uplink: String(up), downlink: String(down) };
     }
 }
-function service(io: FakeIO, enabled = true, check: () => Promise<void> = async () => {}) {
+function service(
+    io: FakeIO,
+    enabled = true,
+    check: () => Promise<void> = async () => {},
+    coordinated = false,
+) {
     return new AnyTlsRuntimeService(
-        { getOrThrow: () => enabled } as unknown as TypedConfigService,
+        {
+            getOrThrow: (key: string) => (key === 'EDGE_ENABLED' ? coordinated : enabled),
+        } as unknown as TypedConfigService,
         io as unknown as AnyTlsRuntimeIO,
         io as unknown as AnyTlsRuntimeStore,
         { assertAnyTls: check } as unknown as CamouflageRuntimePolicy,
     );
 }
+
+test('joint mode rejects standalone mutations, advertises capability and requires complete reconciliation after reboot', async () => {
+    const io = new FakeIO();
+    io.saved.desired = desired();
+    io.saved.totals = { '1': { uplink: '12', downlink: '34' } };
+    const runtime = service(io, true, async () => {}, true);
+    try {
+        await runtime.onModuleInit();
+        assert.equal(io.starts, 0);
+        assert.match((await runtime.status()).error!, /Awaiting coordinated/);
+        assert.deepEqual(runtime.capabilities(), { available: true, coordinatedStartVersion: 1 });
+        await assert.rejects(runtime.apply(desired()), /coordinated Xray/);
+        await assert.rejects(runtime.stop(), /coordinated Xray/);
+        assert.deepEqual(await runtime.users(false), [{ username: '1', uplink: 12, downlink: 34 }]);
+        await runtime.withCoordinatedUpdate(desired(), async (transition) => transition.apply());
+        assert.equal(io.starts, 1);
+        assert.equal((await runtime.status()).error, null);
+        await runtime.withCoordinatedStop((stop) => stop());
+        assert.equal(io.running, false);
+        assert.equal(io.saved.desired, null);
+    } finally {
+        await runtime.onModuleDestroy();
+    }
+});
+
+test('joint update holds the accounting lock through the edge commit, and can explicitly remove listeners', async () => {
+    const io = new FakeIO();
+    const runtime = service(io, true, async () => {}, true);
+    const entered = Promise.withResolvers<void>();
+    const commit = Promise.withResolvers<void>();
+    let observed = false;
+    const update = runtime.withCoordinatedUpdate(desired(), async (transition) => {
+        await transition.apply();
+        entered.resolve();
+        await commit.promise;
+    });
+    await entered.promise;
+    const stats = runtime.users(false).then(() => {
+        observed = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(observed, false);
+    commit.resolve();
+    await Promise.all([update, stats]);
+    await runtime.withCoordinatedUpdate({ version: 1, listeners: [] }, (transition) =>
+        transition.apply(),
+    );
+    assert.equal(io.running, false);
+    assert.equal(io.saved.desired, null);
+    await runtime.onModuleDestroy();
+});
+
+test('joint rollback cannot leave the replacement active when the old camouflage becomes forbidden', async () => {
+    const io = new FakeIO();
+    let denied = false;
+    const runtime = service(
+        io,
+        true,
+        async () => {
+            if (denied) throw new Error('Cloudflare CDN camouflage is forbidden.');
+        },
+        true,
+    );
+    await runtime.withCoordinatedUpdate(desired(), (transition) => transition.apply());
+    await runtime.withCoordinatedUpdate(desired(14002), async (transition) => {
+        await transition.apply();
+        assert.equal(io.saved.desired?.listeners[0].wrapperPort, 14002);
+        denied = true;
+        await assert.rejects(transition.rollback(), /rollback was not confirmed/);
+    });
+    assert.equal(io.running, false);
+    assert.equal(io.saved.desired, null);
+    await runtime.onModuleDestroy();
+});
+
+test('joint preflight rejects forbidden camouflage before the transaction can touch the edge', async () => {
+    const io = new FakeIO();
+    const runtime = service(
+        io,
+        true,
+        async () => {
+            throw new Error('Cloudflare CDN');
+        },
+        true,
+    );
+    await assert.rejects(
+        runtime.withCoordinatedUpdate(desired(), async () => assert.fail('edge mutation')),
+        /Cloudflare/,
+    );
+    assert.equal(io.preparedCount, 0);
+    assert.equal(io.starts, 0);
+    assert.equal(io.owner, false);
+});
+
+test('joint rollback restores the prior ready generation but never auto-restores an inactive saved generation', async () => {
+    for (const active of [false, true]) {
+        const io = new FakeIO();
+        io.saved.desired = desired();
+        const runtime = service(io, true, async () => {}, true);
+        if (active)
+            await runtime.withCoordinatedUpdate(desired(), (transition) => transition.apply());
+        await runtime.withCoordinatedUpdate(desired(14002), async (transition) => {
+            await transition.apply();
+            await transition.rollback();
+        });
+        assert.equal(io.running, active);
+        assert.equal(io.saved.desired?.listeners[0].wrapperPort ?? null, active ? 14001 : null);
+        await runtime.onModuleDestroy();
+    }
+});
 
 test('AnyTLS schema rejects duplicate SNI, ports, credentials, config injection and dangerous usernames', () => {
     assert(AnyTlsConfigSchema.safeParse(desired()).success);

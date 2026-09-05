@@ -248,6 +248,22 @@ test(
         }>) {
             assert.ok(server.listen.every((address) => address.startsWith('127.0.0.1:')));
         }
+        // A joint-runtime crash may not replay the old proxy admission journal. Exercise the
+        // production IO against both native processes, preserving the actual private-CA website.
+        const checkpoint = { ...(await io.snapshot()), plan: webPlan };
+        await io.begin(checkpoint);
+        await io.recover(true);
+        assert.deepEqual((await io.readPlan())?.routes, []);
+        assert.equal((await httpsGet(ca)).body, 'website-upstream');
+        await first.blocked();
+        await second.blocked();
+        await wrapper.blocked();
+        await io.begin(checkpoint);
+        await io.restore(checkpoint);
+        await first.probe();
+        await second.probe();
+        await wrapper.probe();
+        assert.equal((await httpsGet(ca)).body, 'website-upstream');
         completed = true;
     },
 );
@@ -262,6 +278,7 @@ async function eventually(check: () => Promise<boolean>): Promise<void> {
 
 async function proxyTarget(sni: string, sendProxyV2 = true) {
     let observed: (() => void) | undefined;
+    let receivedHellos = 0;
     const sockets = new Set<import('node:net').Socket>();
     const server = createServer((socket) => {
         sockets.add(socket);
@@ -276,6 +293,7 @@ async function proxyTarget(sni: string, sendProxyV2 = true) {
             if (sendProxyV2)
                 assert.equal(data.subarray(0, 12).toString('hex'), '0d0a0d0a000d0a515549540a');
             assert.equal(data[length], 0x16);
+            receivedHellos++;
             observed?.();
             socket.destroy();
         });
@@ -285,6 +303,24 @@ async function proxyTarget(sni: string, sendProxyV2 = true) {
         sni,
         sendProxyV2,
         port: (server.address() as { port: number }).port,
+        async blocked() {
+            const before = receivedHellos;
+            const client = tlsConnect({ host: '127.0.0.1', port: 443, servername: sni });
+            client.setTimeout(5_000, () =>
+                client.destroy(new Error('Rejected SNI probe deadline')),
+            );
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    client.once('error', () => resolve());
+                    client.once('secureConnect', () =>
+                        reject(new Error('Withdrawn proxy unexpectedly accepted TLS')),
+                    );
+                });
+                assert.equal(receivedHellos, before, 'Withdrawn SNI reached its old proxy target');
+            } finally {
+                client.destroy();
+            }
+        },
         async probe() {
             let timer: NodeJS.Timeout | undefined;
             const received = new Promise<void>((resolve, reject) => {

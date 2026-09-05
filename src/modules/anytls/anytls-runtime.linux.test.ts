@@ -108,6 +108,7 @@ test(
         };
         const values = {
             ANYTLS_ENABLED: true,
+            EDGE_ENABLED: false,
             ANYTLS_STATE_DIR: join(directory, 'state'),
             ANYTLS_STATS_PORT: await allocate(),
             ANYTLS_CONTROL_PORT: await allocate(),

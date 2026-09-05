@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 import { REST_API } from '../../api';
-import { NodeEdgePlanSchema, NodeMetadataSchema, NodeSystemSchema } from '../../models';
+import {
+    AnyTlsConfigSchema,
+    NodeEdgePlanSchema,
+    NodeMetadataSchema,
+    NodeSystemSchema,
+} from '../../models';
 
 export namespace StartXrayCommand {
     export const url = REST_API.XRAY.START;
@@ -23,6 +28,7 @@ export namespace StartXrayCommand {
         }),
         xrayConfig: z.record(z.string(), z.unknown()),
         edgePlan: NodeEdgePlanSchema.optional(),
+        anyTlsConfig: AnyTlsConfigSchema.optional(),
     });
 
     export type Request = z.infer<typeof RequestSchema>;

@@ -72,9 +72,21 @@ export class EdgeConfigIO {
         await unlink(join(this.directory, 'edge-transaction.json'));
     }
 
-    async recover(): Promise<void> {
+    async recover(withdrawProxyRoutes = false): Promise<void> {
         const raw = await this.readOptional('edge-transaction.json');
-        if (raw !== null) await this.restore(SnapshotSchema.parse(JSON.parse(raw)));
+        if (raw !== null) {
+            const snapshot = SnapshotSchema.parse(JSON.parse(raw));
+            if (withdrawProxyRoutes) await this.withdraw(snapshot);
+            else await this.restore(snapshot);
+        }
+    }
+
+    async withdraw(snapshot: EdgeSnapshot): Promise<void> {
+        const safe = quiescentEdgeSnapshot(snapshot);
+        // Persist the safe recovery target BEFORE reloading either edge process. A failed
+        // restore or later status call must not replay routes to unconfirmed core listeners.
+        await this.begin(safe);
+        await this.restore(safe);
     }
 
     async restore(snapshot: EdgeSnapshot): Promise<void> {
@@ -155,6 +167,21 @@ export class EdgeConfigIO {
             socket.once('close', () => reject(new Error('HAProxy control closed before EOF.')));
         });
     }
+}
+
+export function quiescentEdgeSnapshot(snapshot: EdgeSnapshot): EdgeSnapshot {
+    const plan = snapshot.plan ? { ...snapshot.plan, routes: [] } : null;
+    const emptyPlan: TNodeEdgePlan = {
+        version: 1,
+        publicHttpPort: 80,
+        publicHttpsPort: 443,
+        caddyHttpTarget: '127.0.0.1:18080',
+        caddyHttpsTarget: '127.0.0.1:18443',
+        routes: [],
+        management: null,
+        website: null,
+    };
+    return { haproxy: renderHaproxy(plan ?? emptyPlan), caddy: snapshot.caddy, plan };
 }
 
 async function atomicWrite(path: string, data: string): Promise<void> {

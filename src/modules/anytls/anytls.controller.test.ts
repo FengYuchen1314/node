@@ -15,6 +15,7 @@ test('AnyTLS routes have exactly one global Node prefix and retain JWT protectio
     assert.deepEqual(Reflect.getMetadata(GUARDS_METADATA, AnyTlsController), [JwtDefaultGuard]);
     for (const [name, method] of [
         ['status', RequestMethod.GET],
+        ['capabilities', RequestMethod.GET],
         ['start', RequestMethod.POST],
         ['stop', RequestMethod.POST],
         ['stats', RequestMethod.POST],

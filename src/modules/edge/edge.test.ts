@@ -10,7 +10,7 @@ import {
     renderHaproxy,
     validateEdgePlan,
 } from './edge-config';
-import { EdgeConfigIO, EdgeSnapshot } from './edge-config.io';
+import { EdgeConfigIO, EdgeSnapshot, quiescentEdgeSnapshot } from './edge-config.io';
 import { EdgeService } from './edge.service';
 
 const plan: TNodeEdgePlan = {
@@ -232,7 +232,7 @@ test('mixed edge reserves both AnyTLS ports against numeric, comma-list and rang
             {
                 inbounds: [
                     ...xray.inbounds,
-                    { tag: 'OTHER', port: '13000-14000, 14002-16000,16002-65535' },
+                    { tag: 'OTHER', port: '13000-14000, 14002-16000,16002-18079,18444-65535' },
                 ],
             },
             anyTls,
@@ -338,8 +338,12 @@ class FakeIO {
     failRestore = false;
     journal: EdgeSnapshot | null = null;
     current: TNodeEdgePlan | null = null;
-    async recover() {
+    async recover(withdraw = false) {
         this.events.push('recover');
+        if (this.journal) {
+            if (withdraw) await this.withdraw(this.journal);
+            else await this.restore(this.journal);
+        }
     }
     async status() {
         return { haproxy: true, caddy: true };
@@ -366,17 +370,31 @@ class FakeIO {
         this.current = snapshot.plan;
         this.journal = null;
     }
+    async withdraw(snapshot: EdgeSnapshot) {
+        this.events.push('withdraw');
+        await this.begin(quiescentEdgeSnapshot(snapshot));
+        await this.restore(this.journal!);
+    }
     async readPlan() {
         return this.current;
     }
 }
-const service = (io: FakeIO, enabled = true) =>
+const service = (io: FakeIO, enabled = true, coordinated = false) =>
     new EdgeService(
-        { getOrThrow: () => enabled } as unknown as TypedConfigService,
+        {
+            getOrThrow: (key: string) =>
+                ({
+                    EDGE_ENABLED: enabled,
+                    ANYTLS_ENABLED: coordinated,
+                    NODE_PORT: 2222,
+                    ANYTLS_STATS_PORT: 15999,
+                    ANYTLS_CONTROL_PORT: 15998,
+                })[key],
+        } as unknown as TypedConfigService,
         io as unknown as EdgeConfigIO,
     );
 
-test('the existing Agent start path rejects raw routes before any mutation until runtime coordination is connected', async () => {
+test('standalone Agent start still rejects raw routes without coordinated runtime context', async () => {
     const io = new FakeIO();
     await assert.rejects(
         service(io).run(
@@ -430,6 +448,136 @@ test('edge commits only after the core and both edge processes succeed', async (
     assert.equal(result, 42);
     assert.deepEqual(io.events, ['recover', 'begin', 'core', 'apply', 'commit']);
     assert.equal(io.journal, null);
+});
+
+test('coordinated edge withdraws old routes until both cores are ready, then publishes the mixed generation', async () => {
+    const io = new FakeIO();
+    io.current = plan;
+    const ready = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    const transition = service(io, true, true).run(
+        mixedPlan,
+        xray,
+        async () => {
+            entered.resolve();
+            await ready.promise;
+            return 42;
+        },
+        async () => {},
+        anyTls,
+    );
+    await entered.promise;
+    assert.deepEqual(io.current?.routes, []);
+    assert.deepEqual(io.current?.management, plan.management);
+    assert(!io.events.includes('apply'));
+    ready.resolve();
+    assert.equal(await transition, 42);
+    assert.deepEqual(io.current, mixedPlan);
+    assert.equal(io.journal, null);
+});
+
+test('joint mode requires explicit configuration including empty AnyTLS and reserves runtime management ports', async () => {
+    const io = new FakeIO();
+    const edge = service(io, true, true);
+    await assert.rejects(
+        edge.run(
+            plan,
+            xray,
+            async () => 42,
+            async () => {},
+        ),
+        /explicit AnyTLS/,
+    );
+    for (const port of [2222, 15998, 15999, '15990-16000', '443,12444']) {
+        await assert.rejects(
+            edge.run(
+                mixedPlan,
+                { inbounds: [...xray.inbounds, { tag: 'BAD', port }] },
+                async () => assert.fail('core mutation'),
+                async () => {},
+                anyTls,
+            ),
+            /ports overlap/,
+        );
+    }
+    for (const port of [2222, 15998, 15999]) {
+        await assert.rejects(
+            edge.run(
+                {
+                    ...mixedPlan,
+                    website: {
+                        domains: ['web.example.com'],
+                        upstream: `http://[::ffff:127.0.0.1]:${port}`,
+                    },
+                },
+                xray,
+                async () => assert.fail('core mutation'),
+                async () => {},
+                anyTls,
+            ),
+            /resolves back/,
+        );
+    }
+    assert.deepEqual(io.events, []);
+    assert.equal(
+        await edge.run(
+            plan,
+            xray,
+            async () => 42,
+            async () => {},
+            { version: 1, listeners: [] },
+        ),
+        42,
+    );
+});
+
+test('failed core rollback never restores proxy admission, including recovery of a retained journal', async () => {
+    const io = new FakeIO();
+    io.current = mixedPlan;
+    const edge = service(io, true, true);
+    await assert.rejects(
+        edge.run(
+            mixedPlan,
+            xray,
+            async () => {
+                io.failRestore = true;
+                throw new Error('activation failure');
+            },
+            async () => {
+                throw new Error('core rollback failure');
+            },
+            anyTls,
+        ),
+        /not confirmed/,
+    );
+    assert.deepEqual(io.current?.routes, []);
+    assert.deepEqual(io.journal?.plan?.routes, []);
+    assert.doesNotMatch(io.journal!.haproxy, /anytls\.example\.com|12443|14001/);
+    io.failRestore = false;
+    assert.equal((await edge.status()).available, true);
+    assert.deepEqual(io.current?.routes, []);
+    assert.deepEqual(io.current?.management, plan.management);
+    assert.equal(io.journal, null);
+});
+
+test('joint boot withdraws saved or interrupted routes instead of assuming core restoration', async () => {
+    for (const interrupted of [false, true]) {
+        const io = new FakeIO();
+        io.current = mixedPlan;
+        if (interrupted) io.journal = await io.snapshot();
+        await service(io, true, true).onModuleInit();
+        assert.deepEqual(io.current?.routes, []);
+        assert.equal(io.journal, null);
+        assert.deepEqual(io.current?.management, plan.management);
+    }
+    const safe = quiescentEdgeSnapshot({
+        haproxy: 'stale proxy',
+        caddy: { fixture: true },
+        plan: null,
+    });
+    assert.doesNotMatch(safe.haproxy, /stale proxy/);
+    assert.deepEqual(safe.caddy, { fixture: true });
+    assert.equal(safe.plan, null);
 });
 
 test('a failed edge reload restores the previous core and edge configuration', async () => {

@@ -18,15 +18,16 @@ export function validateEdgePlan(
     input: unknown,
     xrayConfig?: Record<string, unknown>,
     anyTlsConfig?: TAnyTlsConfig,
+    managementPorts: readonly number[] = [],
 ): TNodeEdgePlan {
     const plan = NodeEdgePlanSchema.parse(input);
     const anyTls = anyTlsConfig === undefined ? undefined : AnyTlsConfigSchema.parse(anyTlsConfig);
-    if (anyTls) validateMixedListeners(xrayConfig, anyTls);
+    if (anyTls) validateMixedListeners(xrayConfig, anyTls, managementPorts);
     const webDomains = [...(plan.management?.domains ?? []), ...(plan.website?.domains ?? [])];
     if (new Set(webDomains).size !== webDomains.length)
         throw new Error('Edge website domains overlap.');
     for (const route of plan.routes) {
-        if (EDGE_PORTS.has(route.targetPort))
+        if (EDGE_PORTS.has(route.targetPort) || managementPorts.includes(route.targetPort))
             throw new Error('An edge route points to a reserved listener.');
         if (!route.sendProxyV2) {
             const listener = anyTls?.listeners.find((item) => item.tag === route.inboundTag);
@@ -85,14 +86,16 @@ export function validateEdgePlan(
 function validateMixedListeners(
     xrayConfig: Record<string, unknown> | undefined,
     anyTls: TAnyTlsConfig,
+    managementPorts: readonly number[],
 ): void {
     if (!Array.isArray(xrayConfig?.inbounds))
         throw new Error('Mixed edge validation requires explicit Xray inbounds.');
     const tags = new Set(anyTls.listeners.map((listener) => listener.tag));
-    const ports = anyTls.listeners.flatMap((listener) => [
-        listener.wrapperPort,
-        listener.innerPort,
-    ]);
+    const ports = [
+        ...managementPorts,
+        ...EDGE_PORTS,
+        ...anyTls.listeners.flatMap((listener) => [listener.wrapperPort, listener.innerPort]),
+    ];
     for (const inbound of xrayConfig.inbounds) {
         if (!inbound || typeof inbound !== 'object')
             throw new Error('Invalid Xray inbound in mixed edge configuration.');
@@ -134,6 +137,7 @@ function inboundPortRanges(value: unknown): Array<[number, number]> {
 export async function rejectLocalEdgeLoops(
     plan: TNodeEdgePlan,
     anyTlsConfig?: TAnyTlsConfig,
+    managementPorts: readonly number[] = [],
 ): Promise<void> {
     const local = new Set(['127.0.0.1', '::1', '0.0.0.0', '::']);
     for (const entries of Object.values(networkInterfaces())) {
@@ -143,6 +147,7 @@ export async function rejectLocalEdgeLoops(
     const anyTls = anyTlsConfig === undefined ? undefined : AnyTlsConfigSchema.parse(anyTlsConfig);
     const reserved = new Set([
         ...EDGE_PORTS,
+        ...managementPorts,
         ...plan.routes.map((route) => route.targetPort),
         ...(anyTls?.listeners.flatMap((listener) => [listener.wrapperPort, listener.innerPort]) ??
             []),

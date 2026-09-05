@@ -8,6 +8,8 @@ export default {
         'edge-policy.test': './src/modules/edge/edge.test.ts',
         'edge-native.test': './src/modules/edge/edge.linux.test.ts',
         'edge-ip.test': './src/modules/camouflage-domain/ip-address.test.ts',
+        'edge-coordinated.test': './src/modules/xray-core/xray-coordinated.test.ts',
+        'edge-anytls-lifecycle.test': './src/modules/anytls/anytls-runtime.service.test.ts',
     },
     output: {
         path: path.resolve(import.meta.dirname, '../test-dist'),
