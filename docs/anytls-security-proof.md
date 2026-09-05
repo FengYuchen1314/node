@@ -314,9 +314,9 @@ that check before coordinated public shared-443 activation is connected.
 The secure route has not received a performance claim or a blanket transport-stability guarantee.
 
 The subsequent [mixed shared-443 routing checkpoint](./mixed-edge-progress.md) verifies header
-mode separation and protected-listener binding with Actions and VPS evidence. The Agent API
-still rejects mixed plans until coordinated activation is connected; this does not supersede
-the outstanding outer-process readiness, panel integration or full mixed-protocol gates.
+mode separation and protected-listener binding. Its initial Agent API rejection was later
+superseded by the [coordinated runtime checkpoint](./coordinated-runtime-progress.md).
+Panel integration and full mixed-protocol client acceptance remain outstanding.
 
 ### Production outer startup admission
 
@@ -373,8 +373,9 @@ Evidence is retained; test containers were removed, existing container IDs were 
 both PDF services stayed healthy and HTTP 38100 returned 200. No VPS core compilation,
 public ports, host-network access or host Docker socket was used.
 
-This closes the outer **startup** admission gap, not continuous health enforcement, coordinated
-Xray/AnyTLS/edge transitions, managed panel creation, certificate lifecycle, user synchronization,
-subscription/topology wrapper preservation or mixed-runtime billing. Those integrations and
-the full original request remain unfinished. The current test panel/Agent artifact pin was
-not upgraded by these isolated runtime tests.
+This closed the outer **startup** admission gap. Coordinated Xray/AnyTLS/edge transitions and
+kernel runtime ownership have since been implemented and tested in the
+[coordinated runtime checkpoint](./coordinated-runtime-progress.md). Continuous health
+enforcement, managed panel creation, certificate lifecycle, user synchronization,
+subscription/topology wrapper preservation and mixed billing remain unfinished. The current
+test panel/Agent artifact pin was not upgraded by these isolated runtime tests.

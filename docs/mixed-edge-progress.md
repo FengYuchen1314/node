@@ -2,6 +2,10 @@
 
 Functional source: `c9b38bef6a9eee0af6aac663c6c2088e45f06fc2`.
 
+This is the historical routing-only checkpoint. The subsequent
+[coordinated runtime checkpoint](./coordinated-runtime-progress.md) supersedes its API activation
+boundary and records current Actions/VPS acceptance and remaining panel integration work.
+
 ## Implemented boundary
 
 The existing HAProxy renderer can distinguish PROXY-v2 VLESS routes from raw TLS routes
@@ -60,9 +64,10 @@ traffic are not claimed by this checkpoint.
 1. Application-ready outer-runtime admission is now implemented and verified by the subsequent
    [production startup checkpoint](./anytls-security-proof.md#production-outer-startup-admission).
    It is no longer an open prerequisite; it must be preserved by the coordinated lifecycle below.
-2. Serialized Xray/AnyTLS/edge startup, replacement, explicit stop and rollback, including
-   crash recovery and Cloudflare revalidation on restoration. No independent API may race
-   that transition or leave a stale admitted wrapper.
+2. Serialized Xray/AnyTLS/edge startup, replacement, stop and rollback are now implemented in
+   the [coordinated runtime checkpoint](./coordinated-runtime-progress.md), with crash withdrawal,
+   live restoration checks and guards against standalone/incremental mutation. This Agent
+   prerequisite is no longer the remaining panel creation gate.
 3. Panel profile/host representation and private certificate lifecycle, user entitlement
    synchronization, secure Mihomo subscription/topology rendering and mixed accounting.
 4. Native encrypted VLESS/AnyTLS plus website acceptance on one server, followed by panel
