@@ -9,6 +9,8 @@ image="${1:?Exact Action-built Node image digest required}"
 test ! -e state
 test -f vps-anytls-api-smoke.mjs
 test -f vps-coordinated-api-smoke.mjs
+test -f vps-anytls-client-smoke.mjs
+test -f mihomo-test-readiness.mjs
 prefix="rw-${task_dir##*/}"
 anchor="$prefix-network"
 agent="$prefix-agent"
@@ -71,4 +73,4 @@ docker restart --timeout 30 "$agent" >/dev/null
 docker exec "$agent" node /test/vps-coordinated-api-smoke.mjs reboot
 docker restart --timeout 30 "$agent" >/dev/null
 docker exec "$agent" node /test/vps-coordinated-api-smoke.mjs stopped
-echo 'PASS: full joint Agent/native edge API lifecycle (no client traffic/public ACME claim)'
+echo 'PASS: full joint Agent/native edge API lifecycle and encrypted client usage (no public ACME or panel billing claim)'

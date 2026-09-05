@@ -1,5 +1,5 @@
 // Complete Actions-built Agent + native HAProxy/Caddy/core API acceptance.
-// This verifies lifecycle/wiring; it does not claim encrypted client traffic or public ACME.
+// Includes real encrypted TCP client traffic; public ACME and panel billing are separate.
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { once } from 'node:events';
@@ -8,10 +8,13 @@ import { request } from 'node:https';
 import { connect } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { sendNativeAnyTlsTraffic } from './vps-anytls-client-smoke.mjs';
+
 const read = (name) => readFile(`/test/${name}`, 'utf8');
 const phase = process.argv[2];
 if (phase === 'setup') {
     const fixture = JSON.parse(await read('fixture.json'));
+    fixture.listeners[0].users[0].name = '42';
     const { privateKey } = generateKeyPairSync('x25519');
     const body = {
         internals: {
@@ -192,7 +195,7 @@ async function assertUsage(previous) {
     assert.equal(usage.available, true);
     assert.equal(usage.version, 1);
     assert.match(usage.epoch, /^[a-f0-9-]{36}$/);
-    assert.deepEqual(usage.users, []); // No client traffic in this lifecycle fixture.
+    assert(Array.isArray(usage.users));
     if (previous) assert.deepEqual(usage, previous);
     assert.equal((await api('anytls', 'stats', { reset: true })).status, 400);
     return usage;
@@ -234,7 +237,16 @@ if (phase === 'initial') {
     await assertRuntime(false);
     await start();
     await assertRuntime(true);
+    const emptyUsage = await assertUsage();
+    assert.deepEqual(emptyUsage.users, []);
+    await assertUsage(emptyUsage);
+    await sendNativeAnyTlsTraffic(fixture.anyTlsConfig.listeners[0]);
     const usage = await assertUsage();
+    assert.equal(usage.epoch, emptyUsage.epoch);
+    assert.equal(usage.users.length, 1);
+    assert.equal(usage.users[0].username, '42');
+    assert(BigInt(usage.users[0].uplink) > 0n);
+    assert(BigInt(usage.users[0].downlink) > 0n);
     await assertUsage(usage);
     await writeFile('/test/usage-snapshot.json', JSON.stringify(usage), { mode: 0o600 });
     assert.equal((await api('xray', 'start', cf)).status, 400);
@@ -258,6 +270,9 @@ if (phase === 'initial') {
     await assertUsage(usage);
     process.stdout.write(
         'PASS: authenticated joint API, native cores, CF rejection, failed-core rollback and cross-runtime port replacement\n',
+    );
+    process.stdout.write(
+        'PASS: real encrypted Mihomo TCP over shared 443 produces durable non-reset per-user API counters\n',
     );
 } else if (phase === 'reboot') {
     await assertUsage(JSON.parse(await read('usage-snapshot.json')));
