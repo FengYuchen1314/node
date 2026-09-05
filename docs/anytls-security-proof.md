@@ -311,3 +311,8 @@ These checks supersede the previously unresolved test-client startup acceptance 
 not the outstanding managed panel integration work. Production outer-process readiness still
 checks open ports and must be hardened before connecting it to public shared-443 admission.
 The secure route has not received a performance claim or a blanket transport-stability guarantee.
+
+The subsequent [mixed shared-443 routing checkpoint](./mixed-edge-progress.md) verifies header
+mode separation and protected-listener binding with Actions and VPS evidence. The Agent API
+still rejects mixed plans until coordinated activation is connected; this does not supersede
+the outstanding outer-process readiness, panel integration or full mixed-protocol gates.
