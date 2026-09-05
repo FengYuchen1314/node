@@ -185,6 +185,18 @@ async function start(body = fixture) {
     assert.equal(result.status, 201, 'Coordinated API did not accept the request');
     assert.equal(result.body.response.isStarted, true, 'Coordinated core startup failed');
 }
+async function assertUsage(previous) {
+    const result = await api('anytls', 'usage');
+    assert.equal(result.status, 200);
+    const usage = result.body.response;
+    assert.equal(usage.available, true);
+    assert.equal(usage.version, 1);
+    assert.match(usage.epoch, /^[a-f0-9-]{36}$/);
+    assert.deepEqual(usage.users, []); // No client traffic in this lifecycle fixture.
+    if (previous) assert.deepEqual(usage, previous);
+    assert.equal((await api('anytls', 'stats', { reset: true })).status, 400);
+    return usage;
+}
 const deadline = Date.now() + 60000;
 while (true) {
     const ready = await api('edge', 'status').catch(() => null);
@@ -198,6 +210,7 @@ assert.deepEqual((await api('anytls', 'capabilities')).body.response, {
 });
 if (phase === 'initial') {
     await assert.rejects(api('anytls', 'capabilities', undefined, false));
+    await assert.rejects(api('anytls', 'usage', undefined, false));
     for (const [scope, path] of [
         ['handler', 'add-user'],
         ['handler', 'add-users'],
@@ -221,6 +234,9 @@ if (phase === 'initial') {
     await assertRuntime(false);
     await start();
     await assertRuntime(true);
+    const usage = await assertUsage();
+    await assertUsage(usage);
+    await writeFile('/test/usage-snapshot.json', JSON.stringify(usage), { mode: 0o600 });
     assert.equal((await api('xray', 'start', cf)).status, 400);
     await assertRuntime(true);
     // Native Xray rejects this AFTER preflight, exercising real controller/core rollback.
@@ -239,10 +255,12 @@ if (phase === 'initial') {
     assert.deepEqual(JSON.parse(await read('edge/edge-plan.json')).routes, swapped.edgePlan.routes);
     await start();
     await assertRuntime(true);
+    await assertUsage(usage);
     process.stdout.write(
         'PASS: authenticated joint API, native cores, CF rejection, failed-core rollback and cross-runtime port replacement\n',
     );
 } else if (phase === 'reboot') {
+    await assertUsage(JSON.parse(await read('usage-snapshot.json')));
     const status = await assertRuntime(false);
     assert.equal(status.desiredListeners, 1);
     assert.match(status.error, /Awaiting coordinated/);
@@ -259,11 +277,13 @@ if (phase === 'initial') {
     const stopped = await api('xray', 'stop');
     assert.equal(stopped.body.response.isStopped, true);
     await assertRuntime(false);
+    await assertUsage(JSON.parse(await read('usage-snapshot.json')));
     process.stdout.write(
         'PASS: reboot withdraws stale admission; explicit reconciliation, AnyTLS removal and joint stop succeed\n',
     );
 } else {
     assert.equal((await assertRuntime(false)).desiredListeners, 0);
+    await assertUsage(JSON.parse(await read('usage-snapshot.json')));
     process.stdout.write(
         'PASS: stopped joint generation is not revived by another full Agent restart\n',
     );
