@@ -14,6 +14,7 @@ import { createServer as createTlsServer } from 'node:tls';
 import { TypedConfigService } from '@common/config/app-config';
 import { TAnyTlsConfig } from '@libs/contracts/models';
 
+import { createMihomoTestReadiness } from '../../../scripts/mihomo-test-readiness.mjs';
 import { CamouflageRuntimePolicy } from '../camouflage-domain/camouflage-runtime-policy.service';
 import { AnyTlsConfigRenderer, AnyTlsRenderOptions, validateAnyTlsConfig } from './anytls-config';
 import { AnyTlsRuntimeIO } from './anytls-runtime.io';
@@ -61,6 +62,8 @@ test(
         });
         target.on('connection', keep);
         const targetPort = await listen(target);
+        const readiness = await createMihomoTestReadiness();
+        t.after(() => readiness.close());
         const camouflage = createTlsServer(
             {
                 cert: camouflageCert,
@@ -197,7 +200,7 @@ test(
                         'skip-cert-verify': false,
                     },
                 ],
-                rules: ['MATCH,node'],
+                rules: [readiness.rule, 'MATCH,node'],
             });
             const child = spawn(
                 process.env.RW_MIHOMO_BINARY!,
@@ -214,6 +217,7 @@ test(
             });
             try {
                 await waitPort(socksPort, child);
+                await readiness.wait(socksPort, () => child.exitCode === null);
                 return await socksHttp(socksPort, target);
             } catch (error) {
                 if (
@@ -459,7 +463,9 @@ async function waitPort(port: number, child: ChildProcess): Promise<void> {
             return;
         } catch {
             socket.destroy();
-            await delay(50);
+            // Deliberately observe the port early. The separate frontend probe, not elapsed time,
+            // must establish application readiness before the no-retry proxy request.
+            await delay(1);
         }
     }
 }

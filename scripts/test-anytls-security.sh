@@ -42,7 +42,7 @@ node --test test-dist/anytls-runtime.test.cjs
 if [[ -n "${RW_ANYTLS_EXPORT_DIR:-}" ]]; then
   mkdir -p "$RW_ANYTLS_EXPORT_DIR"
   cp "$fixture_dir/mihomo" "$fixture_dir/sing-box" "$fixture_dir/rw-core-supervisor" test-dist/anytls-runtime.test.cjs \
-    scripts/anytls-shadowtls-security.mjs scripts/anytls-test-stats.mjs \
+    scripts/anytls-shadowtls-security.mjs scripts/anytls-test-stats.mjs scripts/mihomo-test-readiness.mjs \
     scripts/anytls-test-certificates.sh scripts/vps-anytls-security.sh "$RW_ANYTLS_EXPORT_DIR/"
   cp "$fixture_dir/sing-box-source/LICENSE" "$RW_ANYTLS_EXPORT_DIR/SINGBOX_LICENSE"
   printf '%s\n' "$server_commit" > "$RW_ANYTLS_EXPORT_DIR/SINGBOX_SOURCE_COMMIT"

@@ -14,6 +14,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createServer as createTlsServer } from 'node:tls';
 
 import { queryUserCounters } from './anytls-test-stats.mjs';
+import { createMihomoTestReadiness } from './mihomo-test-readiness.mjs';
 
 const binary = process.env.RW_MIHOMO_BINARY;
 const certDir = process.env.RW_ANYTLS_CERT_DIR;
@@ -117,6 +118,8 @@ test(
         const sockets = new Set();
         const servers = new Set();
         const logs = [];
+        const readiness = await createMihomoTestReadiness();
+        t.after(() => readiness.close());
         const track = (socket) => {
             sockets.add(socket);
             socket.on('error', () => {});
@@ -192,7 +195,7 @@ test(
                         break;
                     } catch {
                         assert(Date.now() < deadline, `${name} did not listen: ${output}`);
-                        await delay(50);
+                        await delay(1);
                     }
                 }
             }
@@ -416,11 +419,13 @@ test(
                         'bind-address': '127.0.0.1',
                         proxies: options.wrapperOnly ? [wrapper] : [wrapper, inner],
                         rules: [
+                            readiness.rule,
                             `MATCH,${options.wrapperOnly ? 'private-wrapper' : 'visible-node'}`,
                         ],
                     },
                     [port],
                 );
+                await readiness.wait(port, () => child.exitCode === null);
                 const marker = `REQUEST-${randomBytes(24).toString('hex')}`;
                 const before = requests.length;
                 let response = '';
