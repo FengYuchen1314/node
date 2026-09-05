@@ -47,6 +47,17 @@ export function canonicalizeIp(address: string): string {
     return parseIp(address).canonical;
 }
 
+// Compare socket endpoints across IPv4 and IPv4-mapped IPv6 spellings without changing
+// address-family-sensitive CIDR/CDN policy checks.
+export function canonicalizeEndpointAddress(address: string): string {
+    const canonical = canonicalizeIp(address);
+    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(canonical);
+    if (!mapped) return canonical;
+    const high = Number.parseInt(mapped[1], 16);
+    const low = Number.parseInt(mapped[2], 16);
+    return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
+}
+
 export function isPublicUnicastAddress(address: string): boolean {
     const parsed = parseIp(address);
     return !BOGON_RANGES.some((range) => containsAddress(range, parsed));

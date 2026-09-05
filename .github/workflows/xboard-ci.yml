@@ -121,6 +121,24 @@ jobs:
       - name: Test shared-443 edge against HAProxy and Caddy
         run: RW_EDGE_INTEGRATION=1 npx tsx --test src/modules/edge/edge.linux.test.ts
 
+      - name: Compile and verify portable edge acceptance
+        run: |
+          NODE_ENV=production npx rspack build --config scripts/edge-test.rspack.mjs
+          RW_EDGE_INTEGRATION=1 node --test test-dist/edge-*.test.cjs
+          printf '%s\n' "$GITHUB_SHA" > test-dist/SOURCE_COMMIT
+          tar --owner=0 --group=0 --numeric-owner -czf edge-acceptance.tar.gz -C test-dist .
+          sha256sum edge-acceptance.tar.gz > edge-acceptance.tar.gz.sha256
+
+      - name: Upload portable edge acceptance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: edge-acceptance-${{ github.sha }}
+          path: |
+            edge-acceptance.tar.gz
+            edge-acceptance.tar.gz.sha256
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Verify AnyTLS ShadowTLS confidentiality with native Mihomo
         env:
           RW_ANYTLS_EXPORT_DIR: ${{ runner.temp }}/anytls-security-proof

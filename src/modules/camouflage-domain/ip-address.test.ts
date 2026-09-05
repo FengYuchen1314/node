@@ -1,11 +1,27 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { canonicalizeIp, isAddressInCidrs, isPublicUnicastAddress } from './ip-address';
+import {
+    canonicalizeEndpointAddress,
+    canonicalizeIp,
+    isAddressInCidrs,
+    isPublicUnicastAddress,
+} from './ip-address';
 
 test('IP canonicalization is deterministic for IPv4 and IPv6', () => {
     assert.equal(canonicalizeIp('8.8.8.8'), '8.8.8.8');
     assert.equal(canonicalizeIp('2001:4860:0000:0000:0000:0000:0000:8888'), '2001:4860::8888');
+});
+
+test('endpoint equality normalizes mapped IPv4 without weakening address-family policy', () => {
+    for (const address of ['::ffff:127.0.0.1', '::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1'])
+        assert.equal(canonicalizeEndpointAddress(address), '127.0.0.1');
+    assert.equal(canonicalizeEndpointAddress('::ffff:104.16.0.1'), '104.16.0.1');
+    assert.equal(canonicalizeEndpointAddress('::ffff:192.0.2.10'), '192.0.2.10');
+    assert.equal(canonicalizeEndpointAddress('2001:db8:0:0:0:0:0:1'), '2001:db8::1');
+    assert.equal(canonicalizeEndpointAddress('0:0:0:0:0:0:0:1'), '::1');
+    assert.equal(canonicalizeIp('::ffff:104.16.0.1'), '::ffff:6810:1');
+    assert.equal(isPublicUnicastAddress('::ffff:8.8.8.8'), false);
 });
 
 test('private, loopback, link-local, multicast, documentation and reserved addresses are bogons', () => {

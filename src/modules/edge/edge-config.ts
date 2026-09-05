@@ -3,27 +3,49 @@ import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 
-import { NodeEdgePlanSchema, TNodeEdgePlan } from '@libs/contracts/models';
+import {
+    AnyTlsConfigSchema,
+    NodeEdgePlanSchema,
+    TAnyTlsConfig,
+    TNodeEdgePlan,
+} from '@libs/contracts/models';
+
+import { canonicalizeEndpointAddress } from '../camouflage-domain/ip-address';
 
 const EDGE_PORTS = new Set([80, 443, 2019, 18080, 18443]);
 
 export function validateEdgePlan(
     input: unknown,
     xrayConfig?: Record<string, unknown>,
+    anyTlsConfig?: TAnyTlsConfig,
 ): TNodeEdgePlan {
     const plan = NodeEdgePlanSchema.parse(input);
+    const anyTls = anyTlsConfig === undefined ? undefined : AnyTlsConfigSchema.parse(anyTlsConfig);
+    if (anyTls) validateMixedListeners(xrayConfig, anyTls);
     const webDomains = [...(plan.management?.domains ?? []), ...(plan.website?.domains ?? [])];
     if (new Set(webDomains).size !== webDomains.length)
         throw new Error('Edge website domains overlap.');
     for (const route of plan.routes) {
         if (EDGE_PORTS.has(route.targetPort))
             throw new Error('An edge route points to a reserved listener.');
+        if (!route.sendProxyV2) {
+            const listener = anyTls?.listeners.find((item) => item.tag === route.inboundTag);
+            if (
+                !listener ||
+                listener.wrapperPort !== route.targetPort ||
+                listener.camouflage.serverName !== route.sni
+            ) {
+                throw new Error('Edge route does not match its protected AnyTLS wrapper.');
+            }
+            continue;
+        }
         if (xrayConfig) {
             const inbounds = xrayConfig.inbounds;
             if (!Array.isArray(inbounds)) throw new Error('Xray inbounds are missing.');
-            const inbound = inbounds.find((item) => item.tag === route.inboundTag);
+            const matches = inbounds.filter((item) => item?.tag === route.inboundTag);
+            const inbound = matches[0];
             if (
-                !inbound ||
+                matches.length !== 1 ||
                 inbound.listen !== '127.0.0.1' ||
                 inbound.port !== route.targetPort ||
                 inbound.protocol !== 'vless' ||
@@ -33,6 +55,11 @@ export function validateEdgePlan(
             ) {
                 throw new Error('Edge route does not match its protected Xray listener.');
             }
+        }
+    }
+    for (const listener of anyTls?.listeners ?? []) {
+        if (!plan.routes.some((route) => !route.sendProxyV2 && route.inboundTag === listener.tag)) {
+            throw new Error('Every managed AnyTLS listener requires its own protected edge route.');
         }
     }
     for (const site of [plan.management, plan.website]) {
@@ -53,12 +80,73 @@ export function validateEdgePlan(
     return plan;
 }
 
-export async function rejectLocalEdgeLoops(plan: TNodeEdgePlan): Promise<void> {
+// This is binding validation, not certificate/CDN validation or permission to start either core.
+// The coordinated runtime must still validate both native configurations before applying the plan.
+function validateMixedListeners(
+    xrayConfig: Record<string, unknown> | undefined,
+    anyTls: TAnyTlsConfig,
+): void {
+    if (!Array.isArray(xrayConfig?.inbounds))
+        throw new Error('Mixed edge validation requires explicit Xray inbounds.');
+    const tags = new Set(anyTls.listeners.map((listener) => listener.tag));
+    const ports = anyTls.listeners.flatMap((listener) => [
+        listener.wrapperPort,
+        listener.innerPort,
+    ]);
+    for (const inbound of xrayConfig.inbounds) {
+        if (!inbound || typeof inbound !== 'object')
+            throw new Error('Invalid Xray inbound in mixed edge configuration.');
+        if (typeof inbound.tag === 'string') {
+            if (tags.has(inbound.tag))
+                throw new Error('Xray and AnyTLS inbound tags must be unique on a server.');
+            tags.add(inbound.tag);
+        }
+        // Do not assume only numeric ports: Xray also accepts comma lists and ranges.
+        // Unknown/missing/dynamic ports cannot prove that a private listener is protected.
+        const ranges = inboundPortRanges(inbound.port);
+        if (ports.some((port) => ranges.some(([from, to]) => port >= from && port <= to)))
+            throw new Error('Xray and AnyTLS listener ports overlap.');
+    }
+}
+
+function inboundPortRanges(value: unknown): Array<[number, number]> {
+    if (typeof value !== 'number' && typeof value !== 'string')
+        throw new Error('Cannot validate Xray ports in mixed edge configuration.');
+    return String(value)
+        .split(',')
+        .map((part) => {
+            const match = /^(\d+)(?:-(\d+))?$/.exec(part.trim());
+            const from = Number(match?.[1]);
+            const to = Number(match?.[2] ?? match?.[1]);
+            if (
+                !match ||
+                !Number.isSafeInteger(from) ||
+                !Number.isSafeInteger(to) ||
+                from < 1 ||
+                to > 65535 ||
+                from > to
+            )
+                throw new Error('Cannot validate Xray ports in mixed edge configuration.');
+            return [from, to];
+        });
+}
+
+export async function rejectLocalEdgeLoops(
+    plan: TNodeEdgePlan,
+    anyTlsConfig?: TAnyTlsConfig,
+): Promise<void> {
     const local = new Set(['127.0.0.1', '::1', '0.0.0.0', '::']);
     for (const entries of Object.values(networkInterfaces())) {
-        for (const entry of entries ?? []) local.add(entry.address.replace(/^::ffff:/, ''));
+        for (const entry of entries ?? [])
+            local.add(canonicalizeEndpointAddress(entry.address.split('%')[0]));
     }
-    const reserved = new Set([...EDGE_PORTS, ...plan.routes.map((route) => route.targetPort)]);
+    const anyTls = anyTlsConfig === undefined ? undefined : AnyTlsConfigSchema.parse(anyTlsConfig);
+    const reserved = new Set([
+        ...EDGE_PORTS,
+        ...plan.routes.map((route) => route.targetPort),
+        ...(anyTls?.listeners.flatMap((listener) => [listener.wrapperPort, listener.innerPort]) ??
+            []),
+    ]);
     for (const site of [plan.management, plan.website]) {
         if (!site) continue;
         const upstream = new URL(site.upstream);
@@ -67,10 +155,10 @@ export async function rejectLocalEdgeLoops(plan: TNodeEdgePlan): Promise<void> {
         const host = upstream.hostname.replace(/^\[|\]$/g, '');
         const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true });
         if (
-            addresses.some(
-                ({ address }) =>
-                    local.has(address.replace(/^::ffff:/, '')) || address.startsWith('127.'),
-            )
+            addresses.some(({ address }) => {
+                const endpoint = canonicalizeEndpointAddress(address);
+                return local.has(endpoint) || endpoint.startsWith('127.');
+            })
         ) {
             throw new Error('Edge upstream resolves back to a local edge or proxy listener.');
         }
@@ -109,7 +197,7 @@ backend xboard_caddy_http
 backend xboard_caddy_https
     server caddy_https 127.0.0.1:18443 check
 
-${routes.map((route) => `backend ${route.name}\n    server target 127.0.0.1:${route.targetPort} send-proxy-v2 check\n`).join('\n')}`;
+${routes.map((route) => `backend ${route.name}\n    server target 127.0.0.1:${route.targetPort}${route.sendProxyV2 ? ' send-proxy-v2' : ''} check\n`).join('\n')}`;
 }
 
 export function renderCaddyfile(plan: TNodeEdgePlan): string {

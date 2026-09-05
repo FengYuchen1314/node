@@ -6,7 +6,7 @@ import { Injectable } from '@nestjs/common';
 import { AnyTlsConfigSchema, TAnyTlsConfig } from '@libs/contracts/models';
 
 import { detectCloudflareSignals } from '../camouflage-domain/cloudflare-signals';
-import { canonicalizeIp } from '../camouflage-domain/ip-address';
+import { canonicalizeEndpointAddress as endpointAddress } from '../camouflage-domain/ip-address';
 
 export interface AnyTlsRenderOptions {
     statsPort: number;
@@ -205,13 +205,4 @@ function localAddresses(): Set<string> {
     for (const entries of Object.values(networkInterfaces()))
         for (const entry of entries ?? []) values.add(endpointAddress(entry.address.split('%')[0]));
     return values;
-}
-
-function endpointAddress(address: string): string {
-    const canonical = canonicalizeIp(address);
-    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(canonical);
-    if (!mapped) return canonical;
-    const high = Number.parseInt(mapped[1], 16);
-    const low = Number.parseInt(mapped[2], 16);
-    return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
 }

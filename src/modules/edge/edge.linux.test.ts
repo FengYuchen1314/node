@@ -35,7 +35,7 @@ const empty: TNodeEdgePlan = {
 };
 
 test(
-    'Linux edge validates SNI routing, PROXY-v2, rollback, HTTPS redirects and website reverse proxy',
+    'Linux edge validates mixed SNI header modes, rollback, trusted HTTPS and website reverse proxy',
     {
         skip: process.platform !== 'linux' || process.env.RW_EDGE_INTEGRATION !== '1',
         timeout: 180_000,
@@ -122,17 +122,21 @@ test(
 
         const first = await proxyTarget('one.example.com');
         const second = await proxyTarget('two.example.com');
+        // A byte-level wrapper stand-in, not a real AnyTLS server. Confidentiality/authentication
+        // are covered by the separate native AnyTLS suite; this checks the shared-443 boundary.
+        const wrapper = await proxyTarget('anytls.example.com', false);
         context.after(async () => {
             await first.close();
             await second.close();
+            await wrapper.close();
         });
         const plan: TNodeEdgePlan = {
             ...empty,
-            routes: [first, second].map((target, index) => ({
+            routes: [first, second, wrapper].map((target, index) => ({
                 sni: target.sni,
                 targetHost: '127.0.0.1',
                 targetPort: target.port,
-                sendProxyV2: true,
+                sendProxyV2: target.sendProxyV2,
                 inboundTag: `inbound_${index}`,
             })),
         };
@@ -141,6 +145,7 @@ test(
         await io.commit();
         await first.probe();
         await second.probe();
+        await wrapper.probe();
 
         // Exercise HAProxy's rejection path even if a future renderer emits bad syntax.
         await io.begin(await io.snapshot());
@@ -151,6 +156,8 @@ test(
         await io.recover();
         assert.deepEqual((await io.readPlan())?.routes, plan.routes);
         await first.probe();
+        await second.probe();
+        await wrapper.probe();
 
         const upstream = createHttpServer((_request, response) => {
             response.end('website-upstream');
@@ -212,7 +219,25 @@ test(
         );
         assert.equal(redirect.status, 308);
         assert.equal(redirect.location, 'https://website.example.invalid/path?q=1');
-        await eventually(async () => (await httpsGet()).body === 'website-upstream');
+        let ca: string | undefined;
+        await eventually(async () => {
+            ca = (
+                await exec('docker', [
+                    'exec',
+                    caddyName,
+                    'cat',
+                    '/data/caddy/pki/authorities/local/root.crt',
+                ])
+            ).stdout;
+            return (await httpsGet(ca)).body === 'website-upstream';
+        });
+        // Neither an untrusted issuer nor a mismatched SNI may pass the website TLS probe.
+        await assert.rejects(httpsGet(), /certificate|self.signed|verify/i);
+        await assert.rejects(httpsGet(ca, 'wrong.example.invalid'), /certificate|tls|handshake/i);
+        assert.equal((await httpsGet(ca)).body, 'website-upstream');
+        await first.probe();
+        await second.probe();
+        await wrapper.probe();
         const active = (await (
             await fetch('http://127.0.0.1:2019/config/', {
                 headers: { Origin: 'http://127.0.0.1:2019' },
@@ -235,7 +260,7 @@ async function eventually(check: () => Promise<boolean>): Promise<void> {
     throw new Error('Expected edge state was not reached.');
 }
 
-async function proxyTarget(sni: string) {
+async function proxyTarget(sni: string, sendProxyV2 = true) {
     let observed: (() => void) | undefined;
     const sockets = new Set<import('node:net').Socket>();
     const server = createServer((socket) => {
@@ -246,9 +271,10 @@ async function proxyTarget(sni: string) {
         socket.on('data', (chunk: Buffer) => {
             data = Buffer.concat([data, chunk]);
             if (data.length < 16) return;
-            const length = 16 + data.readUInt16BE(14);
+            const length = sendProxyV2 ? 16 + data.readUInt16BE(14) : 0;
             if (data.length <= length || !data.includes(Buffer.from(sni))) return;
-            assert.equal(data.subarray(0, 12).toString('hex'), '0d0a0d0a000d0a515549540a');
+            if (sendProxyV2)
+                assert.equal(data.subarray(0, 12).toString('hex'), '0d0a0d0a000d0a515549540a');
             assert.equal(data[length], 0x16);
             observed?.();
             socket.destroy();
@@ -257,6 +283,7 @@ async function proxyTarget(sni: string) {
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     return {
         sni,
+        sendProxyV2,
         port: (server.address() as { port: number }).port,
         async probe() {
             let timer: NodeJS.Timeout | undefined;
@@ -289,15 +316,19 @@ async function proxyTarget(sni: string) {
     };
 }
 
-async function httpsGet(): Promise<{ body: string }> {
+async function httpsGet(
+    ca?: string,
+    servername = 'website.example.invalid',
+): Promise<{ body: string }> {
     return new Promise((resolve, reject) => {
         const request = httpsRequest(
             {
                 hostname: '127.0.0.1',
                 port: 443,
-                servername: 'website.example.invalid',
+                servername,
                 headers: { Host: 'website.example.invalid' },
-                rejectUnauthorized: false,
+                ca,
+                rejectUnauthorized: true,
                 timeout: 3_000,
             },
             (response) => {

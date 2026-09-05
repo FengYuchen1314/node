@@ -91,7 +91,8 @@ export const NodeEdgeTcpRouteSchema = z
         sni: CamouflageDomainSchema,
         targetHost: z.literal('127.0.0.1'),
         targetPort: z.int().min(1_024).max(65_535),
-        sendProxyV2: z.literal(true),
+        // False is accepted only with a matching protected AnyTLS wrapper by runtime validation.
+        sendProxyV2: z.boolean(),
         inboundTag: z.string().min(1).max(256),
     })
     .strict();
