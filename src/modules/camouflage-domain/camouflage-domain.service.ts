@@ -52,7 +52,7 @@ export class CamouflageDomainService {
                 );
             }
 
-            const observation = await this.probeOneResolvedAddress(
+            const observation = await this.probeResolvedAddresses(
                 request.domain,
                 dns.addresses,
                 controller.signal,
@@ -61,7 +61,7 @@ export class CamouflageDomainService {
             const { cfRayPresent, ...http } = observation.http;
             const cloudflareSignals = detectCloudflareSignals({
                 addresses: dns.addresses,
-                cnameChain: dns.cnameChain,
+                cnameChain: [request.domain, ...dns.cnameChain],
                 serverHeader: observation.http.serverHeader,
                 cfRayPresent,
                 asn13335Matched,
@@ -133,19 +133,35 @@ export class CamouflageDomainService {
         this.activeDomains.delete(domain);
     }
 
-    private async probeOneResolvedAddress(
+    private async probeResolvedAddresses(
         domain: string,
         addresses: readonly string[],
         signal: AbortSignal,
     ): Promise<CamouflageDomainNetworkObservation> {
         let lastError: CamouflageDomainError | undefined;
+        let selected: CamouflageDomainNetworkObservation | undefined;
         for (const address of addresses) {
             try {
-                return await this.network.probe(domain, address, signal);
+                const observation = await this.network.probe(domain, address, signal);
+                // A positive signal on any answer excludes the whole domain. Do not stop at a
+                // clean first IP and accidentally present a mixed-CDN domain as a clean report.
+                if (
+                    detectCloudflareSignals({
+                        addresses: [],
+                        cnameChain: [],
+                        asn13335Matched: false,
+                        serverHeader: observation.http.serverHeader,
+                        cfRayPresent: observation.http.cfRayPresent,
+                    }).length
+                )
+                    return observation;
+                selected ??= observation;
             } catch (error: unknown) {
                 lastError = classifyValidationError(error, signal.aborted);
+                if (signal.aborted) throw lastError;
             }
         }
+        if (selected && !signal.aborted) return selected;
         throw (
             lastError ??
             new CamouflageDomainError(

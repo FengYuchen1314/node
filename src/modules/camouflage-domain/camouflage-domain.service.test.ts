@@ -193,6 +193,23 @@ test('CF-Ray evidence reaches the strict Panel report without changing its wire 
     assert.equal(Object.hasOwn(report.http, 'cfRayPresent'), false);
 });
 
+test('a clean first address cannot hide CF-Ray on another address in the catalog report', async () => {
+    const attempted: string[] = [];
+    const service = createService({
+        dns: { ...publicDns(), addresses: ['8.8.8.8', '9.9.9.9'] },
+        network: async (_domain, address) => {
+            attempted.push(address);
+            return {
+                ...NETWORK_OBSERVATION,
+                http: { ...NETWORK_OBSERVATION.http, cfRayPresent: address === '9.9.9.9' },
+            };
+        },
+    });
+    const report = await service.validate(REQUEST);
+    assert.deepEqual(report.cloudflare, { detected: true, signals: ['HTTP_HEADER'] });
+    assert.deepEqual(attempted, ['8.8.8.8', '9.9.9.9']);
+});
+
 test('request contract is strict and normalizes IDNA before any network use', () => {
     assert.equal(
         CamouflageDomainAgentValidationRequestSchema.parse({

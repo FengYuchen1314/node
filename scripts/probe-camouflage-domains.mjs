@@ -43,7 +43,11 @@ export function cloudflareDnsSignals(addresses, cnames) {
     if (addresses.some((ip) => isIP(ip) && cloudflare.check(ip, isIP(ip) === 4 ? 'ipv4' : 'ipv6')))
         signals.push('IP_RANGE');
     if (
-        cnames.some((name) => /(^|\.)(?:cloudflare\.(com|net)|cloudflare-dns\.com)\.?$/i.test(name))
+        cnames.some((name) =>
+            /(^|\.)(?:cloudflare\.(?:com|net)|cloudflare-dns\.com|pages\.dev|workers\.dev|r2\.dev)\.?$/i.test(
+                name,
+            ),
+        )
     )
         signals.push('CNAME');
     return signals;
@@ -282,7 +286,7 @@ export async function probeDomain(resolver, input) {
         ),
     };
     const base = { domain, checkedAt, dns, attempts: [], automaticallyEligible: false };
-    const dnsSignals = cloudflareDnsSignals([...addresses, ...dns.ipv6], dns.cnames);
+    const dnsSignals = cloudflareDnsSignals([...addresses, ...dns.ipv6], [domain, ...dns.cnames]);
     if (dnsSignals.length)
         return { ...base, outcome: 'CLOUDFLARE_EXCLUDED', cloudflareSignals: dnsSignals };
     if (

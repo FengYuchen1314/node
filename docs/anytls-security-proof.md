@@ -286,3 +286,28 @@ They do not yet attribute every earlier failed AnyTLS case or establish stable p
 The next step is application-level readiness before no-retry proxy acceptance, then fresh
 source/compiled/VPS lifecycle and security tests. Production code and acceptance have not
 been changed to add sleeps or conceal failures. All diagnostic containers were removed.
+
+### Application-ready test client acceptance
+
+Node `b12f2a9e6601cd76ecfc6ec52be7f580767cb708` adds a separate, nonce-verified HTTP readiness
+challenge through each test client's SOCKS frontend. Its exact loopback DIRECT rule does not
+use a subscriber, traverse the AnyTLS route, touch the application fixture or affect user
+accounting. Only that health challenge can retry within a bounded deadline. Actual proxy
+acceptance requests still do not retry; port polling is 1 ms to expose the startup window.
+Production renderer/runtime code was not changed by this test-client correction.
+
+[CI 33932017632](https://github.com/FengYuchen1314/node/actions/runs/33932017632) passed both
+native security variants (13/16 tests), both source and Actions-compiled managed suites
+(9 tests each), and all existing checks. The separate
+[image build](https://github.com/FengYuchen1314/node/actions/runs/33932017652) passed.
+The portable archive SHA-256, verified locally and again on 185.99.135.224, is
+`0ce7f4b0e82bb45be6b2ccbf5e7264712daf0a1cb73534c16477234b027caeb9`.
+All 25 tests passed without skips in `/opt/xboard-anytls-test.PxWfik1n`, followed by five
+additional disposable-container runs of the compiled managed suite: 9/9 each, including
+12 fresh short-response sessions per run. No compiler, public port or Docker socket was
+exposed to the test containers. Both PDF services remained healthy and HTTP 38100 = 200.
+
+These checks supersede the previously unresolved test-client startup acceptance status,
+not the outstanding managed panel integration work. Production outer-process readiness still
+checks open ports and must be hardened before connecting it to public shared-443 admission.
+The secure route has not received a performance claim or a blanket transport-stability guarantee.

@@ -102,11 +102,13 @@ export class CamouflageRuntimePolicy {
         // An AnyTLS pinned IP or a REALITY target must also serve the requested identity. Checking
         // every SNI's DNS prevents a CF hostname being smuggled in beside a non-CF target address.
         for (const answer of nameAnswers) this.assertDns(answer);
+        let selected: string | undefined;
         for (const address of [...target.addresses].sort(
             (a, b) => isIP(a) - isIP(b) || a.localeCompare(b),
         )) {
-            try {
-                for (const name of names) {
+            let usable = true;
+            for (const name of names) {
+                try {
                     if (batch.signal.aborted) throw new Error('Camouflage validation deadline.');
                     const observation = await this.network.probe(
                         name,
@@ -137,15 +139,17 @@ export class CamouflageRuntimePolicy {
                         throw new Error(
                             'The camouflage endpoint does not meet certificate/redirect requirements.',
                         );
+                } catch (error) {
+                    // A positive CF signal excludes the entire domain. A failed SNI must not skip
+                    // the remaining SNIs, and a clean IP must not skip the remaining DNS answers.
+                    if (error instanceof CloudflareEndpointError) throw error;
+                    if (batch.signal.aborted) throw error;
+                    usable = false;
                 }
-                return address;
-            } catch (error) {
-                // A positive CF signal excludes the entire domain. Never try a different address to
-                // turn a known Cloudflare domain into a success.
-                if (error instanceof CloudflareEndpointError) throw error;
-                if (batch.signal.aborted) throw error;
             }
+            if (usable && selected === undefined) selected = address;
         }
+        if (selected !== undefined && !batch.signal.aborted) return selected;
         throw new Error(
             'No camouflage endpoint completed verified TLS 1.3/X25519/HTTP2 validation.',
         );

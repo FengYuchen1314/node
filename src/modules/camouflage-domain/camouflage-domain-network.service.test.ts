@@ -1,7 +1,9 @@
 import type { TLSSocket } from 'node:tls';
 
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import { createServer, ServerHttp2Session } from 'node:http2';
+import { connect } from 'node:net';
 import { test } from 'node:test';
 
 import {
@@ -9,6 +11,7 @@ import {
     buildHttpObservation,
     openBoundTlsSocket,
     readTlsObservation,
+    requestHttp2Head,
 } from './camouflage-domain-network.service';
 import { CamouflageDomainError } from './camouflage-domain.error';
 
@@ -114,6 +117,49 @@ test('CF-Ray remains a Cloudflare signal even with a masked or absent Server hea
             buildHttpObservation('h2', { ':status': 200, 'cf-ray': value }).cfRayPresent,
             true,
         );
+    }
+});
+
+test('real HTTP/2 HEAD responses retain CF-Ray presence with an empty value or masked Server', async (t) => {
+    // Exercise the actual HTTP/2 header-copy path. TLS verification is tested separately above;
+    // this owned cleartext fixture supplies the already-negotiated socket to the HTTP adapter.
+    const server = createServer();
+    const sessions = new Set<ServerHttp2Session>();
+    server.on('session', (session) => {
+        sessions.add(session);
+        session.on('close', () => sessions.delete(session));
+    });
+    let ray: string | undefined;
+    server.on('stream', (stream) => {
+        stream.on('error', () => {});
+        stream.respond(
+            { ':status': 200, server: 'nginx', ...(ray === undefined ? {} : { 'cf-ray': ray }) },
+            { endStream: false },
+        );
+        stream.end();
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    t.after(async () => {
+        for (const session of sessions) session.destroy();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+    const port = (server.address() as { port: number }).port;
+    for (ray of [undefined, '', 'fixture-ray-id']) {
+        const socket = connect(port, '127.0.0.1');
+        await once(socket, 'connect');
+        Object.assign(socket, { alpnProtocol: 'h2' });
+        try {
+            const result = await requestHttp2Head(
+                socket as unknown as TLSSocket,
+                'camouflage.test',
+                AbortSignal.timeout(1000),
+            );
+            assert.equal(result.cfRayPresent, ray !== undefined);
+            assert.equal(result.serverHeader, 'nginx');
+        } finally {
+            socket.destroy();
+        }
     }
 });
 

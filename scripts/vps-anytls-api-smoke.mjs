@@ -154,6 +154,9 @@ async function rejectedConfigurationPreservesRuntime(running) {
         { address: '104.16.0.1' },
         { address: '2606:4700::1' },
         { serverName: 'www.cloudflare.com' },
+        { serverName: 'tenant.pages.dev' },
+        { serverName: 'tenant.workers.dev' },
+        { serverName: 'bucket.r2.dev' },
         { address: '127.0.0.1' },
         { serverName: 'unverified.invalid' },
     ]) {
@@ -190,8 +193,39 @@ if (phase === 'initial') {
         'PASS: mTLS/JWT reject unauthorized API access without starting listeners\n',
     );
     await rejectedConfigurationPreservesRuntime(false);
+    const cfReport = await api(
+        'validate',
+        {
+            domain: 'www.cloudflare.com',
+            expectedRegion: 'LOS_ANGELES',
+            requirements: {
+                tlsVersion: 'TLSv1.3',
+                httpProtocol: 'h2',
+                keyExchangeGroup: 'X25519',
+                minimumCertificateValidityDays: 14,
+                maximumRedirects: 0,
+                minimumDistinctMainlandProbeAsns: 2,
+                maximumMainlandEvidenceAgeHours: 24,
+                rejectCloudflare: true,
+                requireCertificateSanMatch: true,
+            },
+        },
+        'valid',
+        'camouflage-domain',
+    );
+    assert.equal(cfReport.status, 201);
+    assert.equal(cfReport.body.response.cloudflare.detected, true);
+    assert(cfReport.body.response.cloudflare.signals.includes('HTTP_HEADER'));
+    assert.equal(Object.hasOwn(cfReport.body.response.http, 'cfRayPresent'), false);
+    await assertPorts(false);
+    process.stdout.write(
+        'PASS: complete authenticated domain API reports live Cloudflare HTTP evidence\n',
+    );
     for (const [target, serverName, expected] of [
         ['104.16.0.1:443', 'www.cloudflare.com', /Cloudflare CDN/],
+        ['lax1.vultrobjects.com:443', 'tenant.pages.dev', /Cloudflare CDN/],
+        ['lax1.vultrobjects.com:443', 'tenant.workers.dev', /Cloudflare CDN/],
+        ['lax1.vultrobjects.com:443', 'bucket.r2.dev', /Cloudflare CDN/],
         ['lax1.vultrobjects.com:443', 'unverified.invalid', /configuration was not accepted/],
     ]) {
         const rejected = await api(

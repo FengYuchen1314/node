@@ -69,13 +69,9 @@ export function detectCloudflareSignals(input: CloudflareSignalInput): Cloudflar
 }
 
 function isCloudflareHostname(hostname: string): boolean {
-    const normalized = hostname.toLowerCase();
-    return (
-        normalized === 'cloudflare.com' ||
-        normalized.endsWith('.cloudflare.com') ||
-        normalized === 'cloudflare.net' ||
-        normalized.endsWith('.cloudflare.net') ||
-        normalized === 'cloudflare-dns.com' ||
-        normalized.endsWith('.cloudflare-dns.com')
+    // Cloudflare-hosted Pages / Workers / public R2 endpoints are also forbidden, including
+    // custom hostnames whose CNAME points at these services. DNS nameservers alone are not input.
+    return /(^|\.)(?:cloudflare\.(?:com|net)|cloudflare-dns\.com|pages\.dev|workers\.dev|r2\.dev)\.?$/i.test(
+        hostname,
     );
 }

@@ -145,6 +145,85 @@ test('CF-Ray forbids fallback to another otherwise reachable IP', async () => {
     assert.equal(calls.length, 1);
 });
 
+test('a clean first IP cannot hide Cloudflare HTTP evidence on a later IP for REALITY or AnyTLS', async () => {
+    for (const kind of ['reality', 'anytls']) {
+        const { policy, calls } = fake({
+            dns: async () => dnsResult([address, '93.184.215.15']),
+            probe: async (_domain, ip) => {
+                const value = observation();
+                if (ip.endsWith('.15')) value.http.cfRayPresent = true;
+                return value;
+            },
+        });
+        const operation =
+            kind === 'reality'
+                ? policy.prepareXray(input())
+                : policy.assertAnyTls({
+                      listeners: [
+                          {
+                              camouflage: {
+                                  serverName: 'camouflage.test',
+                                  address: 'camouflage.test',
+                                  port: 443,
+                              },
+                          },
+                      ],
+                  } as TAnyTlsConfig);
+        await assert.rejects(operation, /Cloudflare CDN/);
+        assert.deepEqual(
+            calls.map((call) => call.ip),
+            [address, '93.184.215.15'],
+        );
+    }
+});
+
+test('an unusable primary SNI cannot skip a secondary SNI with Cloudflare evidence', async () => {
+    const { policy, calls } = fake({
+        dns: async () => dnsResult([address, '93.184.215.15']),
+        probe: async (domain, ip) => {
+            const value = observation();
+            if (ip === address && domain === 'camouflage.test') throw new Error('TLS failed');
+            if (ip === address && domain === 'second.test') value.http.serverHeader = 'cloudflare';
+            return value;
+        },
+    });
+    const config = input();
+    config.inbounds[0].streamSettings.realitySettings.serverNames.push('second.test');
+    await assert.rejects(policy.prepareXray(config), /Cloudflare CDN/);
+    assert.deepEqual(
+        calls.map((call) => call.name),
+        ['camouflage.test', 'second.test'],
+    );
+});
+
+test('all target addresses are inspected before deterministically pinning a verified non-CF IP', async () => {
+    const { policy, calls } = fake({ dns: async () => dnsResult(['93.184.215.15', address]) });
+    const result = await policy.prepareXray(input());
+    assert.deepEqual(
+        calls.map((call) => call.ip),
+        [address, '93.184.215.15'],
+    );
+    assert.equal(
+        (result.config as ReturnType<typeof input>).inbounds[0].streamSettings.realitySettings
+            .target,
+        `${address}:443`,
+    );
+});
+
+test('known Cloudflare service SNI is rejected before DNS or endpoint probing', async () => {
+    const { policy, calls } = fake({
+        dns: async () => {
+            throw new Error('DNS must not be needed');
+        },
+    });
+    for (const domain of ['tenant.pages.dev', 'tenant.workers.dev', 'bucket.r2.dev']) {
+        const config = input(`${address}:443`);
+        config.inbounds[0].streamSettings.realitySettings.serverNames = [domain];
+        await assert.rejects(policy.prepareXray(config), /Cloudflare CDN/);
+    }
+    assert.equal(calls.length, 0);
+});
+
 test('failed DNS, nonpublic destinations and unverified TLS fail closed without leaking raw errors', async () => {
     const { policy, calls } = fake({
         dns: async () => {

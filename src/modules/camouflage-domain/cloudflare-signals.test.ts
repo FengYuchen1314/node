@@ -47,3 +47,35 @@ test('CF-Ray alone excludes an otherwise unrecognized Cloudflare endpoint', () =
         [CAMOUFLAGE_DOMAIN_CLOUDFLARE_SIGNALS.HTTP_HEADER],
     );
 });
+
+test('Cloudflare-hosted service names and CNAME targets use exact DNS suffixes', () => {
+    for (const suffix of [
+        'cloudflare.com',
+        'cloudflare.net',
+        'cloudflare-dns.com',
+        'pages.dev',
+        'workers.dev',
+        'r2.dev',
+    ]) {
+        for (const hostname of [suffix, `tenant.${suffix}`, `TENANT.${suffix.toUpperCase()}.`])
+            assert.deepEqual(
+                detectCloudflareSignals({
+                    addresses: [],
+                    cnameChain: [hostname],
+                    asn13335Matched: false,
+                    serverHeader: null,
+                }),
+                ['CNAME'],
+            );
+        for (const hostname of [`not${suffix}`, `${suffix}.example.com`])
+            assert.deepEqual(
+                detectCloudflareSignals({
+                    addresses: [],
+                    cnameChain: [hostname],
+                    asn13335Matched: false,
+                    serverHeader: null,
+                }),
+                [],
+            );
+    }
+});

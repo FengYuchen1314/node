@@ -319,6 +319,9 @@ function makeHeadRequest(
                 ':status': headers[':status'],
                 location: headers.location,
                 server: headers.server,
+                // Retain presence, including an empty value, but do not fabricate this property
+                // when absent. The downstream policy treats even a masked CF-Ray as exclusion.
+                ...(Object.hasOwn(headers, 'cf-ray') ? { 'cf-ray': headers['cf-ray'] } : {}),
             };
         });
         stream.on('data', (chunk: Buffer) => {

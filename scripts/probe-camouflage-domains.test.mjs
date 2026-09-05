@@ -139,3 +139,20 @@ test('CNAME cycles fail closed with a bounded discovery result', async () => {
     assert.equal(result.outcome, 'DNS_INCOMPLETE');
     assert.deepEqual(result.attempts, []);
 });
+
+test('Cloudflare service domains are excluded even without a CNAME or recognized IP', async () => {
+    for (const suffix of ['pages.dev', 'workers.dev', 'r2.dev']) {
+        assert.deepEqual(cloudflareDnsSignals([], [`TENANT.${suffix.toUpperCase()}.`]), ['CNAME']);
+        assert.deepEqual(cloudflareDnsSignals([], [`${suffix}.example.com`, `not${suffix}`]), []);
+        const result = await probeDomain(
+            {
+                resolve4: async () => ['8.8.8.8'],
+                resolve6: async () => [],
+                resolveCname: async () => [],
+            },
+            `tenant.${suffix}`,
+        );
+        assert.equal(result.outcome, 'CLOUDFLARE_EXCLUDED');
+        assert.deepEqual(result.attempts, []);
+    }
+});
