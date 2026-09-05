@@ -17,10 +17,54 @@ import { TAnyTlsConfig } from '@libs/contracts/models';
 import { createMihomoTestReadiness } from '../../../scripts/mihomo-test-readiness.mjs';
 import { CamouflageRuntimePolicy } from '../camouflage-domain/camouflage-runtime-policy.service';
 import { AnyTlsConfigRenderer, AnyTlsRenderOptions, validateAnyTlsConfig } from './anytls-config';
+import { AnyTlsRuntimeLease } from './anytls-runtime-lease';
 import { AnyTlsRuntimeIO } from './anytls-runtime.io';
 import { AnyTlsRuntimeService } from './anytls-runtime.service';
 import { AnyTlsRuntimeStore, privateJson } from './anytls-runtime.store';
 import { AnyTlsStatsClient } from './anytls-stats.client';
+
+test(
+    'kernel runtime lease rejects concurrent owners and recovers after exact helper death without PID records',
+    {
+        skip: process.platform !== 'linux' || process.env.RW_ANYTLS_RUNTIME_INTEGRATION !== '1',
+        timeout: 15000,
+    },
+    async () => {
+        const directory = await mkdtemp(join(tmpdir(), 'rw-anytls-lease-'));
+        const path = join(directory, 'owner.pid');
+        const lost = Promise.withResolvers<void>();
+        const first = new AnyTlsRuntimeLease(
+            process.env.RW_ANYTLS_SUPERVISOR_BINARY!,
+            path,
+            lost.resolve,
+        );
+        const second = new AnyTlsRuntimeLease(process.env.RW_ANYTLS_SUPERVISOR_BINARY!, path, () =>
+            assert.fail('unexpected lease loss'),
+        );
+        try {
+            await first.acquire();
+            assert(first.isHeld());
+            assert.equal(await readFile(path, 'utf8'), '');
+            await assert.rejects(second.acquire(), /unavailable/);
+            // The only PID signalled is the exact child object created by this fixture.
+            const child = (first as unknown as { record: { child: ChildProcess } }).record.child;
+            child.kill('SIGKILL');
+            await lost.promise;
+            assert(!first.isHeld());
+            await second.acquire();
+            assert(second.isHeld());
+            await first.release();
+            assert(second.isHeld());
+            await second.release();
+            await first.acquire();
+            assert(first.isHeld());
+        } finally {
+            await first.release();
+            await second.release();
+            await rm(directory, { recursive: true, force: true });
+        }
+    },
+);
 
 test(
     'managed AnyTLS runtime: native clients, listener isolation, accounting, rollback and restart',
@@ -456,6 +500,30 @@ test(
                 const third = makeRuntime();
                 await third.runtime.onModuleInit();
                 assert.equal((await third.runtime.status()).isStarted, false);
+                assert.equal((await third.store.load()).desired, null);
+                await third.runtime.apply(config);
+                const owned = third.io as unknown as {
+                    lease: { record: { child: ChildProcess } };
+                    leaseCleanup?: Promise<void>;
+                };
+                const leaseExited = once(owned.lease.record.child, 'exit');
+                owned.lease.record.child.kill('SIGKILL');
+                await leaseExited;
+                await owned.leaseCleanup;
+                assert.equal(third.io.isRunning(), false);
+                assert.equal(third.io.hasChildren(), false);
+                for (const port of config.listeners.flatMap((listener) => [
+                    listener.wrapperPort,
+                    listener.innerPort,
+                ])) {
+                    const socket = connect(port, '127.0.0.1');
+                    try {
+                        await assert.rejects(once(socket, 'connect'));
+                    } finally {
+                        socket.destroy();
+                    }
+                }
+                await third.runtime.stop();
                 assert.equal((await third.store.load()).desired, null);
             },
         );

@@ -26,6 +26,12 @@ export class XrayModule implements OnModuleDestroy {
     async onModuleDestroy() {
         this.logger.log('Destroying module.');
 
-        await this.xrayService.killAllXrayProcesses();
+        try {
+            await this.xrayService.killAllXrayProcesses();
+        } catch {
+            // s6 may have removed its control socket already during container shutdown.
+            // Do not abort later module hooks: AnyTLS still needs to drain and release its lease.
+            this.logger.warn('Xray shutdown could not use s6 control; continuing module cleanup.');
+        }
     }
 }

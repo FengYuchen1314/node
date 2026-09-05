@@ -1,7 +1,8 @@
 import { Body, Controller, Post, UseFilters, UseGuards } from '@nestjs/common';
 
-import { JwtDefaultGuard } from '@common/guards/jwt-guards';
 import { HttpExceptionFilter } from '@common/exception';
+import { JwtDefaultGuard } from '@common/guards/jwt-guards';
+import { StandaloneXrayMutationGuard } from '@common/guards/standalone-xray-mutation.guard';
 import { errorHandler } from '@common/helpers';
 import { PLUGIN_CONTROLLER, PLUGIN_ROUTES } from '@libs/contracts/api';
 
@@ -14,8 +15,8 @@ import {
     UnblockIpsResponseDto,
 } from './dtos';
 import { SyncRequestDto, SyncResponseDto } from './dtos/sync.dto';
-import { NftService } from './services/nft.service';
 import { PluginService } from './plugin.service';
+import { NftService } from './services/nft.service';
 
 @UseFilters(HttpExceptionFilter)
 @UseGuards(JwtDefaultGuard)
@@ -27,6 +28,7 @@ export class PluginController {
     ) {}
 
     @Post(PLUGIN_ROUTES.SYNC)
+    @UseGuards(StandaloneXrayMutationGuard)
     public async sync(@Body() body: SyncRequestDto): Promise<SyncResponseDto> {
         const response = await this.pluginService.sync(body);
         const data = errorHandler(response);

@@ -18,7 +18,19 @@ import (
 
 func main() {
 	binary := flag.String("binary", "", "absolute executable path")
+	lease := flag.String("lease", "", "absolute runtime ownership lock path")
 	flag.Parse()
+	if *lease != "" {
+		if *binary != "" || len(flag.Args()) != 0 || !filepath.IsAbs(*lease) {
+			fmt.Fprintln(os.Stderr, "invalid lease arguments")
+			os.Exit(2)
+		}
+		if err := holdLease(*lease); err != nil {
+			fmt.Fprintln(os.Stderr, "runtime lease unavailable")
+			os.Exit(1)
+		}
+		return
+	}
 	if !filepath.IsAbs(*binary) {
 		fmt.Fprintln(os.Stderr, "absolute core executable required")
 		os.Exit(2)

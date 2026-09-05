@@ -1,6 +1,6 @@
 import { ChildProcess, execFile, spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { lstat, mkdir, open, readFile, realpath, rm, unlink } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rm } from 'node:fs/promises';
 import { createServer, connect } from 'node:net';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -12,6 +12,7 @@ import { TypedConfigService } from '@common/config/app-config';
 import { TAnyTlsConfig } from '@libs/contracts/models';
 
 import { AnyTlsConfigRenderer, AnyTlsRenderOptions } from './anytls-config';
+import { AnyTlsRuntimeLease } from './anytls-runtime-lease';
 import { hasCode, privateJson } from './anytls-runtime.store';
 import { AnyTlsCounters, AnyTlsStatsClient } from './anytls-stats.client';
 import { MihomoStartupReadiness } from './mihomo-startup-readiness';
@@ -38,8 +39,9 @@ export class AnyTlsRuntimeIO {
     private readonly supervisor: string;
     private readonly outer: string;
     private readonly inner: string;
-    private leaseOwned = false;
+    private readonly lease: AnyTlsRuntimeLease;
     private ready = false;
+    private leaseCleanup: Promise<void> | undefined;
 
     constructor(
         private readonly env: TypedConfigService,
@@ -50,10 +52,20 @@ export class AnyTlsRuntimeIO {
         this.supervisor = env.getOrThrow('ANYTLS_SUPERVISOR_PATH');
         this.outer = env.getOrThrow('ANYTLS_MIHOMO_PATH');
         this.inner = env.getOrThrow('ANYTLS_SINGBOX_PATH');
+        this.lease = new AnyTlsRuntimeLease(
+            this.supervisor,
+            join(this.stateDir, 'owner.pid'),
+            () => {
+                this.ready = false;
+                this.leaseCleanup = this.abort().catch(() =>
+                    this.logger.error('AnyTLS lease lost; process termination was not confirmed.'),
+                );
+            },
+        );
     }
 
     isRunning(): boolean {
-        return this.ready && this.coresAlive();
+        return this.lease.isHeld() && this.ready && this.coresAlive();
     }
     private coresAlive(): boolean {
         return ['outer', 'inner'].every((name) => {
@@ -66,43 +78,15 @@ export class AnyTlsRuntimeIO {
     }
 
     async acquire(): Promise<void> {
-        if (this.leaseOwned) return;
+        await this.leaseCleanup;
         await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
-        const path = join(this.stateDir, 'owner.pid');
-        try {
-            const file = await open(path, 'wx', 0o600);
-            try {
-                await file.writeFile(String(process.pid));
-                await file.sync();
-            } finally {
-                await file.close();
-            }
-            this.leaseOwned = true;
-        } catch (error) {
-            if (!hasCode(error, 'EEXIST')) throw error;
-            const owner = await readFile(path, 'utf8');
-            if (!/^[1-9]\d{0,9}$/.test(owner)) throw new Error('Invalid AnyTLS owner record.');
-            // Never kill a PID from disk, even if a previous process reused that PID.
-            try {
-                process.kill(Number(owner), 0);
-            } catch (check) {
-                if (hasCode(check, 'ESRCH')) {
-                    await unlink(path);
-                    return this.acquire();
-                }
-                throw check;
-            }
-            throw new Error('Another Agent owns the AnyTLS runtime.');
-        }
+        await this.lease.acquire();
     }
 
     async release(): Promise<void> {
         if (this.hasChildren()) throw new Error('Cannot release a live AnyTLS runtime.');
         for (const directory of this.generations) await this.removeGeneration(directory);
-        if (this.leaseOwned) {
-            await unlink(join(this.stateDir, 'owner.pid'));
-            this.leaseOwned = false;
-        }
+        await this.lease.release();
     }
 
     private options(): AnyTlsRenderOptions {
@@ -219,9 +203,10 @@ export class AnyTlsRuntimeIO {
                 prepared.config.listeners.map((listener) => listener.wrapperPort),
                 readiness.environment,
             );
-            await readiness.wait(() => this.coresAlive());
+            await readiness.wait(() => this.lease.isHeld() && this.coresAlive());
             await readiness.dispose();
-            if (!this.coresAlive()) throw new Error('AnyTLS core exited during readiness.');
+            if (!this.lease.isHeld() || !this.coresAlive())
+                throw new Error('AnyTLS core or ownership lease exited during readiness.');
             this.ready = true;
         } catch {
             await readiness.dispose().catch(() => undefined);
@@ -299,6 +284,7 @@ export class AnyTlsRuntimeIO {
         ports: number[],
         environment?: Record<string, string>,
     ): Promise<void> {
+        if (!this.lease.isHeld()) throw new Error('AnyTLS runtime lease is not held.');
         const child = spawn(this.supervisor, ['--binary', binary, '--', ...args], {
             stdio: ['pipe', 'ignore', 'ignore'],
             windowsHide: true,
@@ -322,7 +308,7 @@ export class AnyTlsRuntimeIO {
         const deadline = Date.now() + 12000;
         for (const port of ports)
             while (true) {
-                if (record.exited || Date.now() > deadline)
+                if (!this.lease.isHeld() || record.exited || Date.now() > deadline)
                     throw new Error('AnyTLS core did not become ready.');
                 if (await portAccepts(port)) break;
                 await delay(50);

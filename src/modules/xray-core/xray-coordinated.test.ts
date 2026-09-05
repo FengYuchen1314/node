@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { TypedConfigService } from '@common/config/app-config';
+import { StandaloneXrayMutationGuard } from '@common/guards/standalone-xray-mutation.guard';
 import { StartXrayCommand } from '@libs/contracts/commands';
 import { TAnyTlsConfig, TNodeEdgePlan } from '@libs/contracts/models';
 
@@ -25,6 +26,17 @@ const request = (generation: string): StartXrayCommand.Request => ({
         management: null,
         website: null,
     },
+});
+
+test('legacy user/plugin mutations are rejected only in coordinated mode', () => {
+    for (const anyTls of [false, true])
+        for (const edge of [false, true]) {
+            const guard = new StandaloneXrayMutationGuard({
+                getOrThrow: (key: string) => (key === 'ANYTLS_ENABLED' ? anyTls : edge),
+            } as unknown as TypedConfigService);
+            if (anyTls && edge) assert.throws(() => guard.canActivate(), /complete coordinated/);
+            else assert.equal(guard.canActivate(), true);
+        }
 });
 
 function fixture(coordinated = true) {

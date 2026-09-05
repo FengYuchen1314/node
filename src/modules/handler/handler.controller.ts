@@ -2,6 +2,7 @@ import { Body, Controller, Post, UseFilters, UseGuards } from '@nestjs/common';
 
 import { HttpExceptionFilter } from '@common/exception';
 import { JwtDefaultGuard } from '@common/guards/jwt-guards';
+import { StandaloneXrayMutationGuard } from '@common/guards/standalone-xray-mutation.guard';
 import { errorHandler } from '@common/helpers';
 import { HANDLER_CONTROLLER, HANDLER_ROUTES } from '@libs/contracts/api/controllers/handler';
 
@@ -27,6 +28,7 @@ export class HandlerController {
     constructor(private readonly handlerService: HandlerService) {}
 
     @Post(HANDLER_ROUTES.ADD_USER)
+    @UseGuards(StandaloneXrayMutationGuard)
     public async addUser(@Body() body: AddUserRequestDto): Promise<AddUserResponseDto> {
         const response = await this.handlerService.addUser(body);
         const data = errorHandler(response);
@@ -37,6 +39,7 @@ export class HandlerController {
     }
 
     @Post(HANDLER_ROUTES.REMOVE_USER)
+    @UseGuards(StandaloneXrayMutationGuard)
     public async removeUser(@Body() body: RemoveUserRequestDto): Promise<RemoveUserResponseDto> {
         const response = await this.handlerService.removeUser(body);
         const data = errorHandler(response);
@@ -47,6 +50,7 @@ export class HandlerController {
     }
 
     @Post(HANDLER_ROUTES.ADD_USERS)
+    @UseGuards(StandaloneXrayMutationGuard)
     public async addUsers(@Body() body: AddUsersRequestDto): Promise<AddUsersResponseDto> {
         const response = await this.handlerService.addUsers(body);
         const data = errorHandler(response);
@@ -57,6 +61,7 @@ export class HandlerController {
     }
 
     @Post(HANDLER_ROUTES.REMOVE_USERS)
+    @UseGuards(StandaloneXrayMutationGuard)
     public async removeUsers(@Body() body: RemoveUsersRequestDto): Promise<RemoveUsersResponseDto> {
         const response = await this.handlerService.removeUsers(body);
         const data = errorHandler(response);

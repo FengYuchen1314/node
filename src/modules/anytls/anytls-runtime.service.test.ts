@@ -537,7 +537,6 @@ test('failed native preparation removes only its own generated configuration dir
     const io = new AnyTlsRuntimeIO(env, renderer, new AnyTlsStatsClient());
     const untouched = join(directory, 'generation-11111111-1111-4111-8111-111111111111');
     try {
-        await io.acquire();
         await privateJson(join(untouched, 'keep.json'), { userOwned: true });
         for (let attempt = 0; attempt < 3; attempt++)
             await assert.rejects(io.prepare(desired()), /Native AnyTLS/);
@@ -545,7 +544,6 @@ test('failed native preparation removes only its own generated configuration dir
         await io.discard({ directory: untouched } as PreparedAnyTls);
         assert.deepEqual((await readdir(directory)).sort(), [
             'generation-11111111-1111-4111-8111-111111111111',
-            'owner.pid',
         ]);
         assert.deepEqual(JSON.parse(await readFile(join(untouched, 'keep.json'), 'utf8')), {
             userOwned: true,
