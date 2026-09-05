@@ -308,11 +308,73 @@ additional disposable-container runs of the compiled managed suite: 9/9 each, in
 exposed to the test containers. Both PDF services remained healthy and HTTP 38100 = 200.
 
 These checks supersede the previously unresolved test-client startup acceptance status,
-not the outstanding managed panel integration work. Production outer-process readiness still
-checks open ports and must be hardened before connecting it to public shared-443 admission.
+not the outstanding managed panel integration work. At that checkpoint production outer-process
+readiness still checked open ports; the subsequent production-admission checkpoint below replaces
+that check before coordinated public shared-443 activation is connected.
 The secure route has not received a performance claim or a blanket transport-stability guarantee.
 
 The subsequent [mixed shared-443 routing checkpoint](./mixed-edge-progress.md) verifies header
 mode separation and protected-listener binding with Actions and VPS evidence. The Agent API
 still rejects mixed plans until coordinated activation is connected; this does not supersede
 the outstanding outer-process readiness, panel integration or full mixed-protocol gates.
+
+### Production outer startup admission
+
+Functional Node `0b8208c1e394d2c0bdd34d20cfdcce5226963de0` requires a fresh generation-bound
+post-up acknowledgement before reporting AnyTLS running. The pinned Mihomo
+[entry point](https://github.com/MetaCubeX/mihomo/blob/ac017cdd246ce8bd547653d927e7bf77d7ee73d5/main.go)
+invokes this hook after configuration activation; its
+[executor](https://github.com/MetaCubeX/mihomo/blob/v1.19.30/hub/executor/executor.go)
+has already entered the running tunnel state. Both supervised cores must still be alive.
+Stopping/aborting clears readiness. The fixed hook receives only a generated path and random
+nonce through quoted environment variables; no subscriber input becomes a command.
+
+The acknowledgement is private, bounded and single-use. Missing/incomplete, stale/foreign,
+oversized, linked, wrong-owner or group/world-readable records cannot establish readiness.
+The Agent removes an accepted record, and each activation gets a new path and nonce even when
+reusing a prepared directory. No network listener, subscriber credential, billing traffic,
+extra forwarding rule or camouflage-policy bypass was added for this handshake.
+
+The functional commit passed [CI](https://github.com/FengYuchen1314/node/actions/runs/33951994013)
+and its [image build](https://github.com/FengYuchen1314/node/actions/runs/33951994009).
+Image `sha256:680bd45f7fce9247f30112d61999b2b052c79013a0b47292aa4739a1078b4b4e` then passed
+complete-image HTTPS/mTLS/JWT API acceptance on 185.99.135.224 in
+`/opt/xboard-anytls-api-test.kdmzyIxP`: successful/unchanged starts, native processes, live CF
+rejection before and after start, full restart restoration, explicit stop/non-revival and
+unsafe saved-state rejection with management still available. Source-script archive SHA-256:
+`5f79d7fcd3ecf1caf93a36f235dc4841c40c684fc1a1b1acdc2154f3735e1cec`.
+
+Its first portable VPS run at `/opt/xboard-anytls-test.zbbi0KEm` passed 32/34 tests, but the
+delayed-hook fixture failed before configuration validation: its generated shell launcher
+was on a `noexec` temporary mount (`EACCES`). That failure was not counted as acceptance.
+Test-only `823cdf8065f998b7cc46f2e7a6edc97b21626e95` ships the fixed launcher alongside the
+immutable artifact and leaves `/tmp` **noexec**. It does not change production runtime code.
+
+The corrected checkpoint passed [CI](https://github.com/FengYuchen1314/node/actions/runs/33952687310)
+and its [image build](https://github.com/FengYuchen1314/node/actions/runs/33952687314), digest
+`sha256:f1ab9a014e52e6d3734184aeae24aa401f265e5784ee74b72a9480a9e7640dfe`.
+The CI includes 115 unit tests, native Mieru/edge checks, 13/16 standalone security variants,
+10 source managed tests and 18 compiled managed/readiness tests. The complete-image VPS
+acceptance above used the functional 0b8208c image, not this subsequent test-only image.
+
+All **34** corrected portable security/lifecycle/readiness tests passed without skips on
+185.99.135.224 in `/opt/xboard-anytls-test.0aC5VCgT`. The real outer core opens its port while
+the test deliberately withholds post-up; `isRunning` remains false until the release and
+verified acknowledgement. Existing native encrypted traffic, user/listener isolation,
+closed-flow accounting, removal, rollback, restarts and invalid certificate/password cases
+remain in the same suite.
+
+GitHub artifact `9965386070` was downloaded directly to this private VPS directory using its
+short-lived archive URL, never an account token. GitHub's ZIP digest was verified:
+`029eb63244accbcad4539a1f91686d773ed5b6b0bd75f43a3dba5de85d346fab`.
+The contained tar's entries, full source commit and SHA-256 were then verified:
+`dae539d1eeb6c945ee3476e03c475882963a3f1c9922b92bf5a23e02c2eb6683`.
+Evidence is retained; test containers were removed, existing container IDs were unchanged,
+both PDF services stayed healthy and HTTP 38100 returned 200. No VPS core compilation,
+public ports, host-network access or host Docker socket was used.
+
+This closes the outer **startup** admission gap, not continuous health enforcement, coordinated
+Xray/AnyTLS/edge transitions, managed panel creation, certificate lifecycle, user synchronization,
+subscription/topology wrapper preservation or mixed-runtime billing. Those integrations and
+the full original request remain unfinished. The current test panel/Agent artifact pin was
+not upgraded by these isolated runtime tests.

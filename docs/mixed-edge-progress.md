@@ -30,6 +30,8 @@ and live Cloudflare policy checks remain the responsibility of the runtime befor
 - [Actions CI 33951248878](https://github.com/FengYuchen1314/node/actions/runs/33951248878)
   passed all checks, native Mieru lifecycle, native edge tests, 20 Actions-compiled edge tests,
   both standalone AnyTLS confidentiality variants and both managed AnyTLS lifecycle suites.
+- Its [image build](https://github.com/FengYuchen1314/node/actions/runs/33951248864) also passed:
+  `sha256:977768d668749c916c0ab9535f0a948e983d71e0f77b1b27687b6e39342f23ab`.
 - Portable edge artifact: `9964902313`; archive SHA-256
   `d13ea70026dd2871917059aea75a697c05a494903c6f0c5e0867328dbd433cee`.
   Its archive entries, checksum and full source commit were checked locally and on the VPS.
@@ -55,7 +57,9 @@ traffic are not claimed by this checkpoint.
 
 ## Still required before managed AnyTLS can be enabled
 
-1. Application-ready outer-runtime admission, not just an open TCP port.
+1. Application-ready outer-runtime admission is now implemented and verified by the subsequent
+   [production startup checkpoint](./anytls-security-proof.md#production-outer-startup-admission).
+   It is no longer an open prerequisite; it must be preserved by the coordinated lifecycle below.
 2. Serialized Xray/AnyTLS/edge startup, replacement, explicit stop and rollback, including
    crash recovery and Cloudflare revalidation on restoration. No independent API may race
    that transition or leave a stale admitted wrapper.
